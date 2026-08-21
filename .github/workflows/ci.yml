@@ -37,6 +37,9 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Verify generated API spec matches controller source
+        run: python3 tools/generate_api_spec.py --check
+
       - name: Build and test (Flyway migration runs as part of context load)
         env:
           JWT_SECRET: ci-test-jwt-secret-that-is-at-least-64-bytes-long-for-hmac-sha512-algorithm!!

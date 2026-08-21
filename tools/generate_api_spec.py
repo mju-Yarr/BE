@@ -214,7 +214,10 @@ def main() -> None:
     if len(endpoints) < 70:
         raise SystemExit(f"unexpected endpoint count: {len(endpoints)}")
     if check:
-        if not OUT.exists() or OUT.read_text(encoding="utf-8") != rendered:
+        # 계약이 아니라 출처만 담는 줄이다. 이걸 비교에 넣으면 src/main/java를 건드린
+        # 커밋마다 문서를 다시 만들어 커밋해야 통과하므로, 내용이 같아도 항상 stale이 된다.
+        contract = lambda text: [l for l in text.splitlines() if not l.startswith("> **Source of truth:**")]
+        if not OUT.exists() or contract(OUT.read_text(encoding="utf-8")) != contract(rendered):
             raise SystemExit("doc/API.md is stale; run python3 tools/generate_api_spec.py")
         print(f"verified {OUT.relative_to(ROOT)}: {len(endpoints)} endpoints, {len(dto_names)} referenced types")
         return
