@@ -21,6 +21,8 @@ public class StubRouteProvider implements RouteProvider {
                 new Leg("BUS", 780, 4200),
                 new Leg("WALK", 120, 150)
         );
+        Instant departAt = "arrive_by".equals(anchor) ? at.minusSeconds(TOTAL_SEC) : at;
+        Instant arriveAt = "arrive_by".equals(anchor) ? at : at.plusSeconds(TOTAL_SEC);
         RouteOption option = new RouteOption(
                 UUID.randomUUID().toString(),
                 "fastest",
@@ -29,8 +31,8 @@ public class StubRouteProvider implements RouteProvider {
                 1,
                 OUTDOOR_SEC,
                 legs,
-                at,
-                at.plusSeconds(TOTAL_SEC),
+                departAt,
+                arriveAt,
                 "stub",
                 UUID.randomUUID().toString()
         );

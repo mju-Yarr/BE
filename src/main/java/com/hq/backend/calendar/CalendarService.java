@@ -2,6 +2,9 @@ package com.hq.backend.calendar;
 
 import com.hq.backend.calendar.dto.BusyBlockResponse;
 import com.hq.backend.calendar.dto.CalendarConnectionResponse;
+import com.hq.backend.calendar.dto.CalendarConnectionSummaryResponse;
+import com.hq.backend.calendar.dto.CalendarSourcePatchRequest;
+import com.hq.backend.calendar.dto.CalendarSourceResponse;
 import com.hq.backend.calendar.dto.CalendarConnectionStatusResponse;
 import com.hq.backend.calendar.dto.ConnectCalendarRequest;
 import com.hq.backend.calendar.dto.DensityResponse;
@@ -19,9 +22,11 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -158,6 +163,61 @@ public class CalendarService {
                 .filter(connection -> connection.getRevokedAt() == null)
                 .isPresent();
         return new CalendarConnectionStatusResponse(connected);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CalendarConnectionSummaryResponse> listConnections(UUID userId) {
+        List<CalendarConnection> connections =
+                calendarConnectionRepository.findByUserIdAndRevokedAtIsNullOrderByConnectedAtDesc(userId);
+        Map<UUID, List<CalendarSource>> sourcesByConnection = connections.isEmpty() ? Map.of()
+                : calendarSourceRepository.findByCalendarConnectionIdInAndDeletedAtIsNull(connections.stream()
+                                .map(CalendarConnection::getCalendarConnectionId).toList())
+                        .stream().sorted(Comparator.comparing(CalendarSource::isDefault).reversed()
+                                .thenComparing(CalendarSource::getDisplayName))
+                        .collect(Collectors.groupingBy(CalendarSource::getCalendarConnectionId));
+        return connections.stream()
+                .map(connection -> new CalendarConnectionSummaryResponse(connection.getCalendarConnectionId(),
+                        connection.getProvider(), connection.getExternalAccountId(), connection.getConnectedAt(),
+                        connection.getLastSyncedAt(), sourcesByConnection
+                                .getOrDefault(connection.getCalendarConnectionId(), List.of())
+                                .stream().map(CalendarSourceResponse::from).toList()))
+                .toList();
+    }
+
+    @Transactional
+    public CalendarSourceResponse updateSource(UUID userId, UUID sourceId, CalendarSourcePatchRequest request) {
+        CalendarSource source = findOwnedSource(userId, sourceId);
+        source.setSyncEnabled(request.syncEnabled());
+        return CalendarSourceResponse.from(source);
+    }
+
+    @Transactional
+    public CalendarSourceResponse selectDefaultSource(UUID userId, UUID sourceId) {
+        CalendarSource selected = findOwnedSource(userId, sourceId);
+        if (!selected.isWritable()) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "CALENDAR_SOURCE_NOT_WRITABLE",
+                    "기본 기록 캘린더는 쓰기 가능한 소스여야 합니다.");
+        }
+        calendarSourceRepository.findByCalendarConnectionIdAndDeletedAtIsNullOrderByIsDefaultDescDisplayNameAsc(
+                selected.getCalendarConnectionId()).forEach(source -> source.setDefault(false));
+        selected.setDefault(true);
+        return CalendarSourceResponse.from(selected);
+    }
+
+    @Transactional(readOnly = true)
+    public CalendarSource requireWritableSource(UUID userId, UUID sourceId) {
+        CalendarSource source = findOwnedSource(userId, sourceId);
+        if (!source.isWritable()) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "CALENDAR_SOURCE_NOT_WRITABLE",
+                    "쓰기 가능한 캘린더 소스가 아닙니다.");
+        }
+        return source;
+    }
+
+    private CalendarSource findOwnedSource(UUID userId, UUID sourceId) {
+        return calendarSourceRepository.findOwnedActive(sourceId, userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CALENDAR_SOURCE_NOT_FOUND",
+                        "캘린더 소스를 찾을 수 없습니다."));
     }
 
     public DensityResponse getDensity(UUID userId, LocalDate date) {

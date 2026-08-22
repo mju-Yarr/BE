@@ -10,7 +10,16 @@ import org.springframework.data.repository.query.Param;
 
 public interface CalendarSourceRepository extends JpaRepository<CalendarSource, UUID> {
     List<CalendarSource> findByCalendarConnectionIdAndDeletedAtIsNullOrderByIsDefaultDescDisplayNameAsc(UUID connectionId);
+    List<CalendarSource> findByCalendarConnectionIdInAndDeletedAtIsNull(List<UUID> connectionIds);
     Optional<CalendarSource> findByCalendarConnectionIdAndIsDefaultTrueAndDeletedAtIsNull(UUID connectionId);
+
+    @Query("""
+            select s from CalendarSource s, CalendarConnection c
+            where s.calendarConnectionId = c.calendarConnectionId
+              and s.calendarSourceId = :sourceId and c.userId = :userId
+              and c.revokedAt is null and s.deletedAt is null
+            """)
+    Optional<CalendarSource> findOwnedActive(@Param("sourceId") UUID sourceId, @Param("userId") UUID userId);
 
     @Modifying
     @Query(value = """

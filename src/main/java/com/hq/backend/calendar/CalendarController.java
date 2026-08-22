@@ -2,17 +2,23 @@ package com.hq.backend.calendar;
 
 import com.hq.backend.calendar.dto.CalendarConnectionResponse;
 import com.hq.backend.calendar.dto.CalendarConnectionStatusResponse;
+import com.hq.backend.calendar.dto.CalendarConnectionSummaryResponse;
+import com.hq.backend.calendar.dto.CalendarSourcePatchRequest;
+import com.hq.backend.calendar.dto.CalendarSourceResponse;
 import com.hq.backend.calendar.dto.ConnectCalendarRequest;
 import com.hq.backend.calendar.dto.DensityResponse;
 import com.hq.backend.common.auth.CurrentUserId;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,6 +32,23 @@ public class CalendarController {
 
     private final CalendarService calendarService;
     private final CalendarSyncService calendarSyncService;
+
+    @GetMapping("/calendar/connections")
+    public List<CalendarConnectionSummaryResponse> connections(@CurrentUserId UUID userId) {
+        return calendarService.listConnections(userId);
+    }
+
+    @PatchMapping("/calendar/sources/{sourceId}")
+    public CalendarSourceResponse patchSource(@CurrentUserId UUID userId, @PathVariable UUID sourceId,
+            @Valid @RequestBody CalendarSourcePatchRequest request) {
+        return calendarService.updateSource(userId, sourceId, request);
+    }
+
+    @PostMapping("/calendar/sources/{sourceId}/default")
+    public CalendarSourceResponse selectDefaultSource(
+            @CurrentUserId UUID userId, @PathVariable UUID sourceId) {
+        return calendarService.selectDefaultSource(userId, sourceId);
+    }
 
     @PostMapping("/calendar/google/connect")
     public CalendarConnectionResponse connect(

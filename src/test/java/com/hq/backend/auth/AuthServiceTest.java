@@ -66,7 +66,7 @@ class AuthServiceTest {
     void 이메일_인증이_비활성화된_환경에서는_가입_즉시_검증처리하고_메일을_보내지_않는다() {
         UUID userId = UUID.randomUUID();
         when(userRepository.existsByEmail("local@example.com")).thenReturn(false);
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
             ReflectionTestUtils.setField(user, "userId", userId);
             return user;
@@ -85,7 +85,7 @@ class AuthServiceTest {
     void 이메일_인증이_활성화된_환경에서는_인증_메일을_발송한다() {
         UUID userId = UUID.randomUUID();
         when(userRepository.existsByEmail("verify@example.com")).thenReturn(false);
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
             ReflectionTestUtils.setField(user, "userId", userId);
             return user;

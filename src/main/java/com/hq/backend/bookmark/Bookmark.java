@@ -13,6 +13,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "bookmark")
@@ -29,17 +30,32 @@ public class Bookmark {
     @Column(nullable = false)
     private UUID userId;
 
+    @Setter
     @Column(nullable = false)
     private String placeName;
 
+    @Setter
+    private String address;
+
+    @Setter
     @Column(nullable = false)
     private BigDecimal lat;
 
+    @Setter
     @Column(nullable = false)
     private BigDecimal lng;
 
+    @Setter
     private String folder;
+
+    @Setter
+    @Column(nullable = false)
+    private int sortOrder;
 
     @Column(nullable = false)
     private Instant createdAt;
+
+    @Setter
+    @Column(nullable = false)
+    private Instant updatedAt;
 }

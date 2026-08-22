@@ -58,6 +58,7 @@ import org.springframework.web.client.RestClient;
 @SpringBootTest(properties = {
         "spring.task.scheduling.enabled=false",
         "openai.api-key=task10-fixture-key",
+        "openai.model=gpt-4o-mini-2024-07-18",
         "openai.classification.enabled=true",
         "openai.classification.rollout-percent=100",
         "openai.classification.max-per-sync=5",

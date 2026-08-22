@@ -52,4 +52,17 @@ public class RouteOption {
 
     @JdbcTypeCode(SqlTypes.JSON)
     private String routePayload;
+
+    @Column(nullable = false)
+    private String provider;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private String legs;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private String degraded;
+
+    private String rawRef;
 }

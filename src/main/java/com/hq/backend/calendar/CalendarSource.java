@@ -29,9 +29,9 @@ public class CalendarSource {
     private String externalCalendarId;
     @Column(nullable = false)
     private String displayName;
-    @Column(nullable = false)
+    @Setter @Column(nullable = false)
     private boolean isWritable;
-    @Column(nullable = false)
+    @Setter @Column(nullable = false)
     private boolean isDefault;
     @Setter @Column(nullable = false)
     private boolean syncEnabled;

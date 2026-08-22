@@ -16,6 +16,12 @@ public class UnavailableVerificationEmailSender implements VerificationEmailSend
     }
 
     @Override
+    public void sendVerificationCode(String recipientEmail, String code) {
+        throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "EMAIL_DELIVERY_UNAVAILABLE",
+                "이메일 인증 서비스를 일시적으로 사용할 수 없습니다.");
+    }
+
+    @Override
     public void sendVerificationLink(String recipientEmail, String verificationLink) {
         throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "EMAIL_DELIVERY_UNAVAILABLE",
                 "이메일 인증 서비스를 일시적으로 사용할 수 없습니다.");

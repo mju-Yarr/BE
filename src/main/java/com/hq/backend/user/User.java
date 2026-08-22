@@ -30,7 +30,10 @@ public class User {
     private UUID userId;
 
     @Setter
-    @Column(nullable = false, unique = true)
+    private String fullName;
+
+    @Setter
+    @Column(nullable = false)
     private String email;
 
     @Setter
@@ -46,6 +49,9 @@ public class User {
     @Setter
     @Column(nullable = false)
     private String accountStatus; // active | withdrawn
+
+    @Setter
+    private UUID registrationInstallationId;
 
     @Setter
     private Instant emailVerifiedAt;

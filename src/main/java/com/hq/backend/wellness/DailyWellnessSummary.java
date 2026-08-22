@@ -47,6 +47,14 @@ public class DailyWellnessSummary {
     @Column(nullable = false)
     private String outdoorSource; // estimated | observed
 
+    // 정시 도착 횟수와 그 분모. on_time만 정시로 세고 unknown은 분모에서도 빠진다.
+    // 0회와 "결과를 모름"을 구분하려고 표본 수를 같이 저장한다.
+    @Column(nullable = false)
+    private int onTimeCount;
+
+    @Column(nullable = false)
+    private int arrivalSampleCount;
+
     private BigDecimal avgWisWeighted;
 
     private BigDecimal avgRls;

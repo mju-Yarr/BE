@@ -7,6 +7,8 @@ import com.hq.backend.auth.PasswordResetToken;
 import com.hq.backend.auth.PasswordResetTokenRepository;
 import com.hq.backend.auth.RefreshToken;
 import com.hq.backend.auth.RefreshTokenRepository;
+import com.hq.backend.bookmark.RecentDestinationRepository;
+import com.hq.backend.bookmark.RecentDestinationService;
 import com.hq.backend.common.exception.ApiException;
 import com.hq.backend.common.util.TokenHashUtil;
 import java.time.Instant;
@@ -54,6 +56,15 @@ class ConcurrencyIntegrationTest {
     private AccountManagementService accountManagementService;
 
     @Autowired
+    private AccountService accountService;
+
+    @Autowired
+    private RecentDestinationService recentDestinationService;
+
+    @Autowired
+    private RecentDestinationRepository recentDestinationRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     /**
@@ -76,6 +87,35 @@ class ConcurrencyIntegrationTest {
                 .hasSize(2)
                 .filteredOn(identity -> identity.getRevokedAt() != null)
                 .hasSize(1);
+    }
+
+    @Test
+    void 동시에_같은_닉네임으로_변경하면_하나만_성공한다() throws Exception {
+        UUID firstUser = createTestUser("nickname-first-" + UUID.randomUUID() + "@test.com");
+        UUID secondUser = createTestUser("nickname-second-" + UUID.randomUUID() + "@test.com");
+        String nickname = "race_" + UUID.randomUUID().toString().substring(0, 6);
+
+        List<String> results = runConcurrently(List.of(
+                () -> accountService.changeNickname(firstUser, nickname),
+                () -> accountService.changeNickname(secondUser, nickname.toUpperCase())));
+
+        assertThat(results).containsExactlyInAnyOrder(SUCCESS, "NICKNAME_EXISTS");
+        assertThat(userRepository.findAll()).filteredOn(user -> user.getNickname().equalsIgnoreCase(nickname))
+                .hasSize(1);
+    }
+
+    @Test
+    void 최근_목적지_동시기록은_한행에서_useCount를_원자적으로_증가시킨다() throws Exception {
+        UUID userId = createTestUser("recent-" + UUID.randomUUID() + "@test.com");
+
+        List<String> results = runConcurrently(List.of(
+                () -> recentDestinationService.record(userId, "강남역", "서울", 37.498, 127.027),
+                () -> recentDestinationService.record(userId, "강남역", "서울", 37.498, 127.027)));
+
+        assertThat(results).containsExactly(SUCCESS, SUCCESS);
+        var destination = recentDestinationRepository.findByUserIdAndLatAndLng(userId,
+                new java.math.BigDecimal("37.498000"), new java.math.BigDecimal("127.027000")).orElseThrow();
+        assertThat(destination.getUseCount()).isEqualTo(2);
     }
 
     /**

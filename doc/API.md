@@ -1,6 +1,6 @@
 # ENSOM Backend API 명세서
 
-> **Source of truth:** BE commit `62ae0e0e4d9db937d8a55c0267b72a39d0de6094`. 이 문서는 `tools/generate_api_spec.py`가 Spring MVC controller, DTO, Bean Validation, Jackson enum annotation에서 생성한다.
+> **Source of truth:** BE commit `e36cffde1bd7135e59c9bc613c207ef2e0349d81`. 이 문서는 `tools/generate_api_spec.py`가 Spring MVC controller, DTO, Bean Validation, Jackson enum annotation에서 생성한다.
 > 생성: `python3 tools/generate_api_spec.py` · endpoint count 검증: `python3 tools/generate_api_spec.py --check`.
 
 ## 1. 적용 범위와 전송 규약
@@ -32,13 +32,15 @@
 
 ## 3. Endpoint
 
-생성 기준 public endpoint 수: **77**.
+생성 기준 public endpoint 수: **91**.
 
 ### auth
 
 | Method | Path | Auth | 입력 | Success | Response | Handler |
 |---|---|---|---|---|---|---|
 | POST | `/v1/auth/email/signup` | Public | body `request`: `SignupRequest` | `201 CREATED` | `SignupResponse` | `AuthController.java#signup` |
+| POST | `/v1/auth/email/verification/send` | Public | body `request`: `EmailVerificationSendRequest`, parameter `httpRequest`: `HttpServletRequest` | `202 ACCEPTED` | `EmailVerificationSendResponse` | `AuthController.java#sendVerificationCode` |
+| POST | `/v1/auth/email/verification/confirm` | Public | body `request`: `EmailVerificationConfirmRequest`, parameter `httpRequest`: `HttpServletRequest` | `200 OK` | `EmailVerificationConfirmResponse` | `AuthController.java#confirmVerificationCode` |
 | POST | `/v1/auth/email/verify` | Public | body `request`: `VerifyEmailRequest` | `204 NO_CONTENT` | `void` | `AuthController.java#verifyEmail` |
 | GET | `/v1/auth/email/verify` | Public | query `token`: `String` | `200 OK` | `String` | `AuthController.java#verifyEmailLink` |
 | POST | `/v1/auth/email/verify/resend` | Public | body `request`: `ResendVerificationRequest` | `202 ACCEPTED` | `void` | `AuthController.java#resendEmailVerification` |
@@ -54,6 +56,9 @@
 
 | Method | Path | Auth | 입력 | Success | Response | Handler |
 |---|---|---|---|---|---|---|
+| GET | `/v1/calendar/connections` | Bearer JWT | — | `200 OK` | `List<CalendarConnectionSummaryResponse>` | `CalendarController.java#connections` |
+| PATCH | `/v1/calendar/sources/{sourceId}` | Bearer JWT | path `sourceId`: `UUID`, body `request`: `CalendarSourcePatchRequest` | `200 OK` | `CalendarSourceResponse` | `CalendarController.java#patchSource` |
+| POST | `/v1/calendar/sources/{sourceId}/default` | Bearer JWT | path `sourceId`: `UUID` | `200 OK` | `CalendarSourceResponse` | `CalendarController.java#selectDefaultSource` |
 | POST | `/v1/calendar/google/connect` | Bearer JWT | body `request`: `ConnectCalendarRequest` | `200 OK` | `CalendarConnectionResponse` | `CalendarController.java#connect` |
 | DELETE | `/v1/calendar/google` | Bearer JWT | — | `204 NO_CONTENT` | `void` | `CalendarController.java#disconnect` |
 | GET | `/v1/calendar/google/status` | Bearer JWT | — | `200 OK` | `CalendarConnectionStatusResponse` | `CalendarController.java#googleConnectionStatus` |
@@ -95,8 +100,16 @@
 |---|---|---|---|---|---|---|
 | GET | `/v1/me/bookmarks` | Bearer JWT | query `folder`: `String` | `200 OK` | `List<BookmarkResponse>` | `BookmarkController.java#list` |
 | POST | `/v1/me/bookmarks` | Bearer JWT | body `request`: `BookmarkCreateRequest` | `201 CREATED` | `BookmarkResponse` | `BookmarkController.java#create` |
+| PATCH | `/v1/me/bookmarks/{id}` | Bearer JWT | path `id`: `UUID`, body `request`: `BookmarkPatchRequest` | `200 OK` | `BookmarkResponse` | `BookmarkController.java#patch` |
+| POST | `/v1/me/bookmarks/bulk-delete` | Bearer JWT | body `request`: `BookmarkBulkDeleteRequest` | `204 NO_CONTENT` | `void` | `BookmarkController.java#bulkDelete` |
 | DELETE | `/v1/me/bookmarks/{id}` | Bearer JWT | path `id`: `UUID` | `204 NO_CONTENT` | `void` | `BookmarkController.java#delete` |
+| GET | `/v1/me/recent-destinations` | Bearer JWT | query `limit`: `int` | `200 OK` | `List<RecentDestinationResponse>` | `RecentDestinationController.java#list` |
+| DELETE | `/v1/me/recent-destinations` | Bearer JWT | — | `204 NO_CONTENT` | `void` | `RecentDestinationController.java#clear` |
 | GET | `/v1/me/bootstrap` | Bearer JWT | — | `200 OK` | `BootstrapResponse` | `BootstrapController.java#bootstrap` |
+| GET | `/v1/me/onboarding` | Bearer JWT | — | `200 OK` | `OnboardingProgressResponse` | `OnboardingController.java#get` |
+| PATCH | `/v1/me/onboarding` | Bearer JWT | body `request`: `OnboardingProgressRequest` | `200 OK` | `OnboardingProgressResponse` | `OnboardingController.java#update` |
+| POST | `/v1/me/onboarding/complete` | Bearer JWT | — | `200 OK` | `OnboardingProgressResponse` | `OnboardingController.java#complete` |
+| POST | `/v1/me/onboarding/coachmark-seen` | Bearer JWT | — | `204 NO_CONTENT` | `void` | `OnboardingController.java#coachmarkSeen` |
 | GET | `/v1/me/permissions` | Bearer JWT | — | `200 OK` | `List<PermissionResponse>` | `UserPermissionController.java#get` |
 | PATCH | `/v1/me/permissions` | Bearer JWT | body `request`: `PermissionUpdateRequest` | `200 OK` | `List<PermissionResponse>` | `UserPermissionController.java#update` |
 | GET | `/v1/me/personalization` | Bearer JWT | — | `200 OK` | `PersonalizationResponse` | `PersonalizationController.java#get` |
@@ -146,6 +159,7 @@
 | POST | `/v1/plans/{planId}/actions` | Bearer JWT | path `planId`: `UUID`, body `request`: `ActionBatchRequest` | `200 OK` | `ActionBatchResponse` | `PlanController.java#submitActions` |
 | POST | `/v1/plans/{planId}/prep-items/{planPrepItemId}/resolve` | Bearer JWT | path `planId`: `UUID`, path `planPrepItemId`: `UUID`, body `request`: `PrepItemResolveRequest` | `200 OK` | `PrepItemResolveResponse` | `PlanController.java#resolvePrepItem` |
 | POST | `/v1/plans/{planId}/wellness-actions/{wellnessActionId}/resolve` | Bearer JWT | path `planId`: `UUID`, path `wellnessActionId`: `UUID`, body `request`: `WellnessActionResolveRequest` | `200 OK` | `WellnessActionResolveResponse` | `PlanController.java#resolveWellnessAction` |
+| GET | `/v1/plans/today` | Bearer JWT | — | `200 OK` | `TodayPlanResponse` | `TodayPlanController.java#today` |
 
 ### prep-items
 
@@ -203,14 +217,33 @@
 | `eventStatus` | `String` | — |
 | `plan` | `PlanDetailResponse` | — |
 
+### `BookmarkBulkDeleteRequest`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `bookmarkIds` | `List<UUID>` | NotEmpty |
+
 ### `BookmarkCreateRequest`
 
 | Field | Java type | Validation |
 |---|---|---|
 | `placeName` | `String` | NotBlank |
+| `address` | `String` | — |
 | `lat` | `BigDecimal` | NotNull |
 | `lng` | `BigDecimal` | NotNull |
 | `folder` | `String` | — |
+| `sortOrder` | `Integer` | Positive |
+
+### `BookmarkPatchRequest`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `placeName` | `String` | — |
+| `address` | `String` | — |
+| `lat` | `BigDecimal` | — |
+| `lng` | `BigDecimal` | — |
+| `folder` | `String` | — |
+| `sortOrder` | `Integer` | Positive |
 
 ### `BookmarkResponse`
 
@@ -218,10 +251,13 @@
 |---|---|---|
 | `bookmarkId` | `UUID` | — |
 | `placeName` | `String` | — |
+| `address` | `String` | — |
 | `lat` | `BigDecimal` | — |
 | `lng` | `BigDecimal` | — |
 | `folder` | `String` | — |
+| `sortOrder` | `int` | — |
 | `createdAt` | `Instant` | — |
+| `updatedAt` | `Instant` | — |
 
 ### `BootstrapResponse`
 
@@ -229,10 +265,11 @@
 |---|---|---|
 | `user` | `UserSummary` | — |
 | `settings` | `SettingsSummary` | — |
+| `gate` | `PermissionsAndOnboarding` | — |
 | `permissions` | `List<PermissionResponse>` | — |
 | `places` | `List<PlaceSummary>` | — |
-| `prepItems` | `List<Object>` | — |
-| `todayPlan` | `Object` | — |
+| `prepItems` | `List<PrepRuleResponse>` | — |
+| `todayPlan` | `TodayPlanResponse` | — |
 | `engineConfig` | `EngineConfigSummary` | — |
 
 ### `CalendarConnectionResponse`
@@ -248,6 +285,33 @@
 | Field | Java type | Validation |
 |---|---|---|
 | `connected` | `boolean` | — |
+
+### `CalendarConnectionSummaryResponse`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `calendarConnectionId` | `UUID` | — |
+| `provider` | `String` | — |
+| `externalAccountId` | `String` | — |
+| `connectedAt` | `Instant` | — |
+| `lastSyncedAt` | `Instant` | — |
+| `sources` | `List<CalendarSourceResponse>` | — |
+
+### `CalendarSourcePatchRequest`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `syncEnabled` | `Boolean` | NotNull |
+
+### `CalendarSourceResponse`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `calendarSourceId` | `UUID` | — |
+| `displayName` | `String` | — |
+| `writable` | `boolean` | — |
+| `defaultSource` | `boolean` | — |
+| `syncEnabled` | `boolean` | — |
 
 ### `ChangeNicknameRequest`
 
@@ -306,6 +370,8 @@
 | `eventCount` | `int` | — |
 | `totalOutdoorMinutes` | `int` | — |
 | `outdoorSource` | `String` | — |
+| `onTimeCount` | `int` | — |
+| `arrivalSampleCount` | `int` | — |
 | `dwlBand` | `String` | — |
 | `dwlScore` | `Short` | — |
 | `cardScenario` | `String` | — |
@@ -332,6 +398,33 @@
 | `newEmail` | `String` | NotBlank; Email |
 | `password` | `String` | NotBlank |
 
+### `EmailVerificationConfirmRequest`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `email` | `String` | NotBlank; Email |
+| `code` | `String` | NotBlank; Pattern(regexp = "\\d{6}") |
+
+### `EmailVerificationConfirmResponse`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `verificationTicket` | `String` | — |
+| `expiresAt` | `Instant` | — |
+
+### `EmailVerificationSendRequest`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `email` | `String` | NotBlank; Email |
+
+### `EmailVerificationSendResponse`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `challengeId` | `UUID` | — |
+| `expiresAt` | `Instant` | — |
+
 ### `EnvironmentResponse`
 
 | Field | Java type | Validation |
@@ -350,11 +443,12 @@
 | `endsAt` | `Instant` | — |
 | `locationState` | `LocationState` — enum: `required_resolved, required_missing, not_required, undecided` | NotNull |
 | `destinationName` | `String` | — |
+| `destinationAddress` | `String` | — |
 | `destinationLat` | `Double` | — |
 | `destinationLng` | `Double` | — |
 | `meetingUrl` | `String` | — |
 | `eventKind` | `String` | — |
-| `sourceType` | `SourceType` — enum: `INTERNAL, EXTERNAL, MAP_SEARCH` | NotNull |
+| `sourceType` | `SourceType` — enum: `internal, external, map_search` | NotNull |
 | `anchorMode` | `String` | — |
 | `originPlaceId` | `UUID` | — |
 | `selectedRouteOptionId` | `UUID` | — |
@@ -405,12 +499,17 @@
 | `timezone` | `String` | — |
 | `locationState` | `LocationState` — enum: `required_resolved, required_missing, not_required, undecided` | — |
 | `destinationName` | `String` | — |
+| `destinationAddress` | `String` | — |
 | `destinationLat` | `Double` | — |
 | `destinationLng` | `Double` | — |
 | `meetingUrl` | `String` | — |
 | `eventKind` | `String` | — |
 | `status` | `EventStatus` — enum: `planned, notified, preparing, enroute, arrived, closed, skipped, cancelled, unresolved` | — |
 | `autoManageExcluded` | `boolean` | — |
+| `sourceType` | `SourceType` — enum: `internal, external, map_search` | — |
+| `calendarSourceId` | `UUID` | — |
+| `anchorMode` | `String` | — |
+| `route` | `RouteOptionResponse` | — |
 | `plan` | `PlanResponse` | — |
 
 ### `EventReviewRequest`
@@ -437,12 +536,14 @@
 | `endsAt` | `Instant` | — |
 | `locationState` | `LocationState` — enum: `required_resolved, required_missing, not_required, undecided` | — |
 | `destinationName` | `String` | — |
+| `destinationAddress` | `String` | — |
 | `destinationLat` | `Double` | — |
 | `destinationLng` | `Double` | — |
 | `meetingUrl` | `String` | — |
 | `eventKind` | `String` | — |
 | `displayLabel` | `String` | — |
 | `autoManageExcluded` | `Boolean` | — |
+| `anchorMode` | `String` | — |
 
 ### `GoogleLoginRequest`
 
@@ -485,6 +586,21 @@
 | `body` | `String` | — |
 | `triggerReason` | `String` | — |
 | `reaction` | `String` | — |
+
+### `OnboardingProgressRequest`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `currentStep` | `String` | NotBlank |
+
+### `OnboardingProgressResponse`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `currentStep` | `String` | — |
+| `completed` | `boolean` | — |
+| `completedAt` | `Instant` | — |
+| `coachmarkSeen` | `boolean` | — |
 
 ### `PasswordResetExecuteRequest`
 
@@ -686,6 +802,18 @@
 |---|---|---|
 | `reason` | `String` | — |
 
+### `RecentDestinationResponse`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `recentDestinationId` | `UUID` | — |
+| `placeName` | `String` | — |
+| `address` | `String` | — |
+| `lat` | `BigDecimal` | — |
+| `lng` | `BigDecimal` | — |
+| `bookmarked` | `boolean` | — |
+| `lastUsedAt` | `Instant` | — |
+
 ### `RegisterPushDeviceRequest`
 
 | Field | Java type | Validation |
@@ -712,6 +840,9 @@
 | `transferCount` | `int` | — |
 | `departAt` | `Instant` | — |
 | `arriveAt` | `Instant` | — |
+| `provider` | `String` | — |
+| `legs` | `List<Leg>` | — |
+| `degraded` | `List<String>` | — |
 
 ### `RouteSearchResponse`
 
@@ -725,6 +856,9 @@
 | `transferCount` | `int` | — |
 | `departAt` | `Instant` | — |
 | `arriveAt` | `Instant` | — |
+| `provider` | `String` | — |
+| `legs` | `List<Leg>` | — |
+| `degraded` | `List<String>` | — |
 
 ### `RouteSelectRequest`
 
@@ -768,8 +902,14 @@
 
 | Field | Java type | Validation |
 |---|---|---|
+| `name` | `String` | — |
+| `nickname` | `String` | — |
 | `email` | `String` | NotBlank; Email |
-| `password` | `String` | NotBlank; Size(min = 10, message = "비밀번호는 10자 이상이어야 합니다.") |
+| `password` | `String` | NotBlank; Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.") |
+| `timezone` | `String` | — |
+| `installationId` | `UUID` | — |
+| `verificationTicket` | `String` | — |
+| `consents` | `Map<String, Boolean>` | — |
 
 ### `SignupResponse`
 
@@ -780,6 +920,17 @@
 | `emailVerified` | `boolean` | — |
 | `verificationSent` | `boolean` | — |
 
+### `TodayPlanResponse`
+
+| Field | Java type | Validation |
+|---|---|---|
+| `serverNow` | `Instant` | — |
+| `date` | `LocalDate` | — |
+| `homeState` | `String` | — |
+| `cards` | `List<Card>` | — |
+| `wrapSummary` | `DailySummaryResponse` | — |
+| `degraded` | `List<String>` | — |
+
 ### `TokenResponse`
 
 | Field | Java type | Validation |
@@ -789,6 +940,7 @@
 | `expiresIn` | `long` | — |
 | `user` | `UserInfo` | — |
 | `consentRequired` | `List<String>` | — |
+| `onboarding` | `OnboardingProgressResponse` | — |
 
 ### `VerifyEmailRequest`
 

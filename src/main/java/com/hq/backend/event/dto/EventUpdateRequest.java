@@ -10,11 +10,19 @@ public record EventUpdateRequest(
         Instant endsAt,
         LocationState locationState,
         String destinationName,
+        String destinationAddress,
         Double destinationLat,
         Double destinationLng,
         String meetingUrl,
         String eventKind,
         String displayLabel,
-        Boolean autoManageExcluded
+        Boolean autoManageExcluded,
+        String anchorMode
 ) {
+    public EventUpdateRequest(Instant startsAt, Instant endsAt, LocationState locationState,
+            String destinationName, Double destinationLat, Double destinationLng, String meetingUrl,
+            String eventKind, String displayLabel, Boolean autoManageExcluded) {
+        this(startsAt, endsAt, locationState, destinationName, null, destinationLat, destinationLng,
+                meetingUrl, eventKind, displayLabel, autoManageExcluded, null);
+    }
 }

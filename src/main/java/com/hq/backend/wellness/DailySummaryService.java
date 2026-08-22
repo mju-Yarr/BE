@@ -44,6 +44,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class DailySummaryService {
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+    // 주간 요약(WeeklySummaryService)과 같은 정의를 쓴다. 두 화면이 같은 날의
+    // "정시 도착"을 다르게 세면 안 된다.
+    private static final String ARRIVAL_ON_TIME = "on_time";
+    private static final String ARRIVAL_UNKNOWN = "unknown";
 
     private final EventRepository eventRepository;
     private final PlanRevisionRepository planRevisionRepository;
@@ -143,6 +147,8 @@ public class DailySummaryService {
                 .totalOutdoorMinutes(engine == null || engine.totalOutdoorMinutes() == null
                         ? agg.totalOutdoorMinutes : engine.totalOutdoorMinutes())
                 .outdoorSource(agg.allObserved() ? "observed" : "estimated")
+                .onTimeCount(agg.onTimeCount())
+                .arrivalSampleCount(agg.arrivalSampleCount())
                 .avgWisWeighted(engine == null || engine.avgWisWeighted() == null
                         ? agg.avgWisWeighted : BigDecimal.valueOf(engine.avgWisWeighted()))
                 .avgRls(engine == null || engine.avgRls() == null
@@ -183,6 +189,8 @@ public class DailySummaryService {
     private record Aggregate(
             int totalOutdoorMinutes,
             boolean allObserved,
+            int onTimeCount,
+            int arrivalSampleCount,
             BigDecimal avgWisWeighted,
             BigDecimal avgRls,
             Short dwlScore,
@@ -198,6 +206,8 @@ public class DailySummaryService {
         int totalOutdoor = 0;
         boolean hasOutdoorDataPoint = false;
         boolean anyEstimated = false;
+        int onTimeCount = 0;
+        int arrivalSampleCount = 0;
         double wisWeightedSum = 0;
         int wisWeightTotal = 0;
         double rlsSum = 0;
@@ -205,6 +215,17 @@ public class DailySummaryService {
 
         for (Event event : events) {
             EventExecution execution = executionByEvent.get(event.getEventId());
+
+            // 도착 결과는 계획 유무와 무관하다. plan이 없다고 건너뛰면 정시 도착이
+            // 실제보다 적게 잡힌다.
+            String arrivalResult = execution == null ? null : execution.getArrivalResult();
+            if (arrivalResult != null && !ARRIVAL_UNKNOWN.equals(arrivalResult)) {
+                arrivalSampleCount++;
+                if (ARRIVAL_ON_TIME.equals(arrivalResult)) {
+                    onTimeCount++;
+                }
+            }
+
             PlanRevision plan = latestPlanByEvent.get(event.getEventId());
             if (plan == null) {
                 continue;
@@ -245,7 +266,8 @@ public class DailySummaryService {
         // 데이터가 전혀 없으면(hasOutdoorDataPoint=false) "observed"라고 주장하지 않는다 —
         // 추정치를 관측치처럼 보여주지 않는다는 원칙(API 명세 §12.4)의 연장.
         boolean allObserved = hasOutdoorDataPoint && !anyEstimated;
-        return new Aggregate(totalOutdoor, allObserved, avgWis, avgRls, dwl.score(), dwl.band());
+        return new Aggregate(totalOutdoor, allObserved, onTimeCount, arrivalSampleCount,
+                avgWis, avgRls, dwl.score(), dwl.band());
     }
 
     private record DwlCalculation(Short score, String band) {

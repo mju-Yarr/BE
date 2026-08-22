@@ -1,6 +1,8 @@
 package com.hq.backend.bookmark;
 
+import com.hq.backend.bookmark.dto.BookmarkBulkDeleteRequest;
 import com.hq.backend.bookmark.dto.BookmarkCreateRequest;
+import com.hq.backend.bookmark.dto.BookmarkPatchRequest;
 import com.hq.backend.bookmark.dto.BookmarkResponse;
 import com.hq.backend.common.auth.CurrentUserId;
 import jakarta.validation.Valid;
@@ -10,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,6 +39,19 @@ public class BookmarkController {
     public BookmarkResponse create(@CurrentUserId UUID userId,
                                    @Valid @RequestBody BookmarkCreateRequest request) {
         return bookmarkService.create(userId, request);
+    }
+
+    @PatchMapping("/{id}")
+    public BookmarkResponse patch(@CurrentUserId UUID userId, @PathVariable UUID id,
+            @Valid @RequestBody BookmarkPatchRequest request) {
+        return bookmarkService.patch(userId, id, request);
+    }
+
+    @PostMapping("/bulk-delete")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void bulkDelete(@CurrentUserId UUID userId,
+            @Valid @RequestBody BookmarkBulkDeleteRequest request) {
+        bookmarkService.bulkDelete(userId, request.bookmarkIds());
     }
 
     @DeleteMapping("/{id}")

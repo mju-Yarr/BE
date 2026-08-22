@@ -29,6 +29,21 @@ public class SmtpVerificationEmailSender implements VerificationEmailSender {
     }
 
     @Override
+    public void sendVerificationCode(String recipientEmail, String code) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(from);
+            message.setTo(recipientEmail);
+            message.setSubject("Ensom 이메일 인증 코드");
+            message.setText("Ensom 인증 코드는 " + code + " 입니다. 제한된 시간 동안 한 번만 사용할 수 있습니다.");
+            mailSender.send(message);
+        } catch (MailException ex) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "EMAIL_DELIVERY_UNAVAILABLE",
+                    "인증 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.");
+        }
+    }
+
+    @Override
     public void sendVerificationLink(String recipientEmail, String verificationLink) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();

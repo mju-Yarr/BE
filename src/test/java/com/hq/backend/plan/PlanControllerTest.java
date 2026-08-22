@@ -29,7 +29,11 @@ import org.springframework.test.web.servlet.MockMvc;
 
 // PlanCreationIntegrationTest와 같은 고정 응답 fake-engine 패턴 — 여기는 생성 이후의
 // 조회·재계산·수정·경로선택(§9~10)을 검증한다.
-@SpringBootTest
+@SpringBootTest(properties = {
+        "provider.kma.service-key=",
+        "provider.airkorea.service-key=",
+        "provider.airkorea.station-name="
+})
 @AutoConfigureMockMvc
 class PlanControllerTest {
 

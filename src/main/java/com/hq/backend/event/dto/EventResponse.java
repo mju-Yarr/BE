@@ -3,15 +3,14 @@ package com.hq.backend.event.dto;
 import com.hq.backend.event.Event;
 import com.hq.backend.event.EventStatus;
 import com.hq.backend.event.LocationState;
+import com.hq.backend.event.SourceType;
 import com.hq.backend.plan.dto.PlanResponse;
+import com.hq.backend.plan.dto.RouteOptionResponse;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
-// displayName 해석 순서(§8.3): displayLabel -> destinationName -> "오후 2시 일정".
-// 외부 캘린더 제목 원문은 절대 여기 들어가지 않는다 — Event.displayLabel 자체가
-// 사용자가 입력·승인한 값만 담는다(절대 원칙 8).
 public record EventResponse(
         UUID eventId,
         String displayName,
@@ -20,44 +19,40 @@ public record EventResponse(
         String timezone,
         LocationState locationState,
         String destinationName,
+        String destinationAddress,
         Double destinationLat,
         Double destinationLng,
         String meetingUrl,
         String eventKind,
         EventStatus status,
         boolean autoManageExcluded,
+        SourceType sourceType,
+        UUID calendarSourceId,
+        String anchorMode,
+        RouteOptionResponse route,
         PlanResponse plan
 ) {
-
     public static EventResponse from(Event event, String timezone) {
-        return from(event, timezone, null);
+        return from(event, timezone, null, null);
     }
 
     public static EventResponse from(Event event, String timezone, PlanResponse plan) {
-        return new EventResponse(
-                event.getEventId(),
-                resolveDisplayName(event, timezone),
-                event.getStartsAt(),
-                event.getEndsAt(),
-                timezone,
-                LocationState.valueOf(event.getLocationState().toUpperCase()),
-                event.getDestinationName(),
-                event.getDestinationLat(),
-                event.getDestinationLng(),
-                event.getMeetingUrl(),
-                event.getEventKind(),
-                EventStatus.valueOf(event.getStatus().toUpperCase()),
-                event.isAutoManageExcluded(),
-                plan);
+        return from(event, timezone, plan, null);
+    }
+
+    public static EventResponse from(Event event, String timezone, PlanResponse plan, RouteOptionResponse route) {
+        return new EventResponse(event.getEventId(), resolveDisplayName(event, timezone), event.getStartsAt(),
+                event.getEndsAt(), timezone, LocationState.valueOf(event.getLocationState().toUpperCase()),
+                event.getDestinationName(), event.getDestinationAddress(), event.getDestinationLat(),
+                event.getDestinationLng(), event.getMeetingUrl(), event.getEventKind(),
+                EventStatus.valueOf(event.getStatus().toUpperCase()), event.isAutoManageExcluded(),
+                SourceType.valueOf(event.getSourceType().toUpperCase()), event.getCalendarSourceId(),
+                event.getAnchorMode(), route, plan);
     }
 
     private static String resolveDisplayName(Event event, String timezone) {
-        if (event.getDisplayLabel() != null && !event.getDisplayLabel().isBlank()) {
-            return event.getDisplayLabel();
-        }
-        if (event.getDestinationName() != null && !event.getDestinationName().isBlank()) {
-            return event.getDestinationName();
-        }
+        if (event.getDisplayLabel() != null && !event.getDisplayLabel().isBlank()) return event.getDisplayLabel();
+        if (event.getDestinationName() != null && !event.getDestinationName().isBlank()) return event.getDestinationName();
         ZonedDateTime local = event.getStartsAt().atZone(ZoneId.of(timezone));
         String period = local.getHour() < 12 ? "오전" : "오후";
         int hour12 = local.getHour() % 12 == 0 ? 12 : local.getHour() % 12;

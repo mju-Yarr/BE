@@ -36,7 +36,10 @@ class BootstrapControllerTest {
                 .andExpect(jsonPath("$.permissions").isEmpty())
                 .andExpect(jsonPath("$.places").isEmpty())
                 .andExpect(jsonPath("$.prepItems").isEmpty())
-                .andExpect(jsonPath("$.todayPlan").doesNotExist())
+                .andExpect(jsonPath("$.gate.onboarding.currentStep").value("profile"))
+                .andExpect(jsonPath("$.gate.onboarding.completed").value(false))
+                .andExpect(jsonPath("$.todayPlan.homeState").value("ease"))
+                .andExpect(jsonPath("$.todayPlan.cards").isEmpty())
                 .andExpect(jsonPath("$.engineConfig.engineVer").value("2.1.0"));
     }
 

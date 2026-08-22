@@ -12,6 +12,19 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 class AiClassificationConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withPropertyValues(
+                    "openai.model=gpt-4o-mini-2024-07-18",
+                    "openai.api-key=",
+                    "openai.connect-timeout-ms=3000",
+                    "openai.read-timeout-ms=10000",
+                    "openai.classification.enabled=false",
+                    "openai.classification.rollout-percent=0",
+                    "openai.classification.max-per-sync=5",
+                    "openai.classification.max-concurrency=2",
+                    "openai.classification.privacy-policy-version=",
+                    "openai.classification.classifier-version=event-online-review-v1",
+                    "openai.classification.prompt-version=event-online-ko-v1",
+                    "openai.classification.schema-version=event-online-v1")
             .withInitializer(new ConfigDataApplicationContextInitializer())
             .withUserConfiguration(
                     AiClassificationConfig.class, OpenAiClientConfig.class,

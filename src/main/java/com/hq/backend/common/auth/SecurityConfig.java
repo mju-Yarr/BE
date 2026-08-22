@@ -36,23 +36,32 @@ public class SecurityConfig {
             "/auth/**",
             "/actuator/health",
             "/health",
-            "/error"
+            "/error",
+            // ponytail: 로컬 Swagger 확인용. 커밋하지 말 것(사용자 요청으로 로컬 전용 작업).
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/v3/api-docs/**"
     };
 
     /**
      * Browser clients are hosted on Firebase Hosting. Keep this exact allowlist in sync with
      * deployed frontend origins; the API origin itself is not a cross-origin browser client.
+     * localhost:* is allowed so developers can point a local frontend (dev server port varies
+     * per run) at this API without a redeploy each time.
      */
     private static final List<String> ALLOWED_CORS_ORIGINS = List.of(
             "https://ensom-10da2.web.app",
-            "https://ensom-10da2.firebaseapp.com"
+            "https://ensom-10da2.firebaseapp.com",
+            "http://localhost:*"
     );
 
     private static final List<String> ALLOWED_CORS_HEADERS = List.of(
             "Authorization",
             "Content-Type",
-            "Idempotency-Key",
-            "X-App-Version"
+            "X-Refresh-Token",
+            "X-App-Version",
+            "Accept-Language",
+            "Idempotency-Key"
     );
 
     @Bean
@@ -74,10 +83,10 @@ public class SecurityConfig {
     @Bean
     public org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
         var config = new org.springframework.web.cors.CorsConfiguration();
-        config.setAllowedOrigins(ALLOWED_CORS_ORIGINS);
+        config.setAllowedOriginPatterns(ALLOWED_CORS_ORIGINS);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(ALLOWED_CORS_HEADERS);
-        config.setExposedHeaders(List.of("Authorization", "Idempotency-Key"));
+        config.setExposedHeaders(List.of("Authorization", "X-Refresh-Token", "Idempotency-Key"));
         // ENSOM uses Bearer tokens rather than browser cookies; do not permit credentialed CORS.
         config.setAllowCredentials(false);
         config.setMaxAge(3600L);

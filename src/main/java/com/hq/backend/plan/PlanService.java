@@ -11,8 +11,12 @@ import com.hq.backend.plan.dto.PlanPatchRequest;
 import com.hq.backend.plan.dto.PlanRecalculateResponse;
 import com.hq.backend.plan.dto.RouteOptionResponse;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -41,6 +45,33 @@ public class PlanService {
     @Transactional(readOnly = true)
     public PlanDetailResponse get(UUID userId, UUID planId) {
         return toDetail(findOwned(userId, planId));
+    }
+
+    /** Batch detail assembly for Today/Bootstrap; the supplied events are already user-scoped. */
+    @Transactional(readOnly = true)
+    public Map<UUID, PlanDetailResponse> getDetailsForEvents(List<PlanRevision> revisions, List<Event> events) {
+        if (revisions.isEmpty()) return Map.of();
+        List<UUID> planIds = revisions.stream().map(PlanRevision::getPlanId).toList();
+        Map<UUID, Event> eventById = events.stream()
+                .collect(Collectors.toMap(Event::getEventId, Function.identity()));
+        Map<UUID, List<PlanPrepItem>> checklistByPlan = planPrepItemRepository.findByPlanIdIn(planIds).stream()
+                .collect(Collectors.groupingBy(PlanPrepItem::getPlanId));
+        Map<UUID, PlanContext> contextByPlan = planContextRepository.findAllById(planIds).stream()
+                .collect(Collectors.toMap(PlanContext::getPlanId, Function.identity()));
+        Map<UUID, List<com.hq.backend.wellness.PlanWellnessAction>> actionsByPlan =
+                planWellnessActionRepository.findByPlanIdIn(planIds).stream()
+                        .collect(Collectors.groupingBy(com.hq.backend.wellness.PlanWellnessAction::getPlanId));
+        Map<UUID, com.hq.backend.wellness.PlanWellnessScore> scoreByPlan =
+                planWellnessScoreRepository.findAllById(planIds).stream()
+                        .collect(Collectors.toMap(com.hq.backend.wellness.PlanWellnessScore::getPlanId,
+                                Function.identity()));
+        return revisions.stream().collect(Collectors.toMap(PlanRevision::getPlanId, revision -> {
+            Event event = eventById.get(revision.getEventId());
+            if (event == null) throw new ApiException(HttpStatus.NOT_FOUND, "PLAN_NOT_FOUND", "계획을 찾을 수 없습니다.");
+            return toDetail(revision, event, checklistByPlan.getOrDefault(revision.getPlanId(), List.of()),
+                    contextByPlan.get(revision.getPlanId()), actionsByPlan.getOrDefault(revision.getPlanId(), List.of()),
+                    scoreByPlan.get(revision.getPlanId()));
+        }));
     }
 
     @Transactional(readOnly = true)
@@ -187,25 +218,29 @@ public class PlanService {
 
     private PlanDetailResponse toDetail(PlanRevision revision) {
         Event event = eventRepository.findById(revision.getEventId()).orElseThrow();
-        List<PlanDetailResponse.ChecklistItem> checklist = planPrepItemRepository.findByPlanId(revision.getPlanId())
-                .stream()
+        return toDetail(revision, event, planPrepItemRepository.findByPlanId(revision.getPlanId()),
+                planContextRepository.findById(revision.getPlanId()).orElse(null),
+                planWellnessActionRepository.findByPlanId(revision.getPlanId()),
+                planWellnessScoreRepository.findById(revision.getPlanId()).orElse(null));
+    }
+
+    private PlanDetailResponse toDetail(PlanRevision revision, Event event, List<PlanPrepItem> checklistItems,
+            PlanContext context, List<com.hq.backend.wellness.PlanWellnessAction> actionEntities,
+            com.hq.backend.wellness.PlanWellnessScore score) {
+        List<PlanDetailResponse.ChecklistItem> checklist = checklistItems.stream()
                 .map(this::toChecklistItem)
                 .toList();
-        PlanContext context = planContextRepository.findById(revision.getPlanId()).orElse(null);
-        List<PlanDetailResponse.WellnessActionItem> wellnessActions = planWellnessActionRepository
-                .findByPlanId(revision.getPlanId()).stream()
-                .sorted(java.util.Comparator.comparingInt(com.hq.backend.wellness.PlanWellnessAction::getDisplayRank))
+        List<PlanDetailResponse.WellnessActionItem> wellnessActions = actionEntities.stream()
+                .sorted(Comparator.comparingInt(com.hq.backend.wellness.PlanWellnessAction::getDisplayRank))
                 .map(action -> new PlanDetailResponse.WellnessActionItem(
                         action.getWellnessActionId(), action.getWellnessTopic(), action.getActionCode(),
                         action.getActionLabel(), action.getDisplayRank(), action.getReasonSnapshot(),
                         action.getCompletionStatus(), action.getRespondedAt()))
                 .toList();
-        PlanDetailResponse.WellnessScoreItem wellness = planWellnessScoreRepository.findById(revision.getPlanId())
-                .map(score -> new PlanDetailResponse.WellnessScoreItem(
+        PlanDetailResponse.WellnessScoreItem wellness = score == null ? null
+                : new PlanDetailResponse.WellnessScoreItem(
                         score.getWisScore(), score.getWisBand(), score.getWeightVersion(),
-                        // armedActionCode는 arm된 경우에만 채워진다 — eventArmed는 그 파생값이다.
-                        score.getArmedActionCode() != null, score.getCalculatedAt()))
-                .orElse(null);
+                        score.getArmedActionCode() != null, score.getCalculatedAt());
 
         return new PlanDetailResponse(
                 revision.getPlanId(),

@@ -16,6 +16,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class PlanCreationIntegrationTest {
 
     private static HttpServer fakeEngine;
+    private static final AtomicReference<String> lastEngineRequest = new AtomicReference<>();
 
     @Autowired
     private MockMvc mockMvc;
@@ -59,6 +61,7 @@ class PlanCreationIntegrationTest {
     static void startFakeEngine() throws IOException {
         fakeEngine = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         fakeEngine.createContext("/internal/v1/plans/compute", exchange -> {
+            lastEngineRequest.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] body = """
                     {"prepStartAt":"2026-08-20T12:25:00+09:00",
                      "recommendedDepartAt":"2026-08-20T13:05:00+09:00",
@@ -131,6 +134,31 @@ class PlanCreationIntegrationTest {
         assertThat(planRevisionRepository.findById(UUID.fromString(planId))).isPresent();
         assertThat(routeOptionRepository.findAll()).isNotEmpty();
         assertThat(planPrepItemRepository.findAll()).anyMatch(item -> "우산".equals(item.getItemNameSnapshot()));
+    }
+
+    @Test
+    void depart_at_일정은_engine에_고정_출발시각을_전달한다() throws Exception {
+        String accessToken = signupAndLogin();
+        UUID userId = extractUserId(accessToken);
+        UserPlace origin = userPlaceRepository.save(UserPlace.builder()
+                .userId(userId).placeType("home").placeName("집").address("서울시 어딘가")
+                .latEnc(placeCoordinateCodec.encode(37.5)).lngEnc(placeCoordinateCodec.encode(127.0))
+                .isPrimary(true).build());
+        String startsAt = "2026-08-22T09:30:00+09:00";
+        String body = """
+                {"startsAt":"%s","anchorMode":"depart_at","locationState":"REQUIRED_RESOLVED",
+                 "sourceType":"MAP_SEARCH","destinationName":"강남역",
+                 "destinationLat":37.498,"destinationLng":127.027,"originPlaceId":"%s"}
+                """.formatted(startsAt, origin.getPlaceId());
+
+        mockMvc.perform(post("/events").header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.anchorMode").value("depart_at"));
+
+        assertThat(JsonPath.<String>read(lastEngineRequest.get(), "$.event.anchorMode")).isEqualTo("depart_at");
+        assertThat(JsonPath.<String>read(lastEngineRequest.get(), "$.event.fixedDepartAt"))
+                .isEqualTo("2026-08-22T00:30:00Z");
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.hq.backend.route;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hq.backend.provider.Leg;
 import java.time.Instant;
 import java.util.List;
@@ -38,6 +40,14 @@ public record SelectedRouteSearch(
         return new com.hq.backend.provider.RouteOption(
                 option.getRouteSearchOptionId().toString(), option.getRouteType(),
                 option.getTotalSeconds(), option.getWalkSeconds(), option.getTransferCount(), option.getOutdoorSeconds(),
-                List.<Leg>of(), option.getDepartAt(), option.getArriveAt(), option.getProvider(), option.getRawRef());
+                parseLegs(option.getLegs()), option.getDepartAt(), option.getArriveAt(), option.getProvider(), option.getRawRef());
+    }
+
+    private static List<Leg> parseLegs(String json) {
+        try {
+            return new ObjectMapper().readValue(json, new TypeReference<List<Leg>>() {});
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 }

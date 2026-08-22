@@ -11,6 +11,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * CAL-05에서만 쓰이는 임시 route option snapshot이다. 계획에 속한 route_option과 달리
@@ -85,6 +87,14 @@ public class RouteSearchOption {
 
     @Column(nullable = false)
     private String provider;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private String legs;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private String degraded;
 
     private String rawRef;
 

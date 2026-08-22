@@ -38,7 +38,8 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 // POST /events(§8.2)의 계획 자동 생성과 §9.4/9.5/10.2의 재계산 공용 진입점. ai/plan-engine(#88)이
 // 계산만 하고, 경로·환경 조회와 DB 저장은 여기서 한다. 원점(originPlaceId)이나 목적지 좌표, 경로
@@ -55,7 +56,6 @@ public class PlanCreationService {
     private static final int RAIN_EXTRA_PREP_MINUTES = 5;
     private static final int ARRIVAL_BUFFER_MINUTES = 10;
     private static final int TRAFFIC_BUFFER_MINUTES = 5;
-    private static final String ANCHOR_ARRIVE_BY = "arrive_by";
 
     // WellnessEngineConfig 시드값(V6 engine_config: wis_weights/wis_interest_boost_max/
     // outdoor_cap_min/wellness_event_min). wis_band_card(40)는 API 명세 §12.1 밴드표에서
@@ -87,34 +87,34 @@ public class PlanCreationService {
     private final PlaceCoordinateCodec placeCoordinateCodec;
     private final RouteProvider routeProvider;
     private final EnvironmentProvider environmentProvider;
+    private final PlatformTransactionManager transactionManager;
 
     // 이 앱엔 자동 설정된 ObjectMapper 빈이 없다(Boot 4.1 웹 스타터 구성상 JSON
     // 자동설정이 빈으로 노출되지 않음) — reasons/degraded 직렬화용으로 직접 만든다.
     // 필드명이 전부 한 단어(field/source/text 등)라 네이밍 전략 차이는 안 생긴다.
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Transactional
+    // 경로/환경/plan-engine 호출은 DB transaction 밖에서 수행한다(외부 I/O 동안 커넥션을
+    // 붙잡지 않기 위해) — persist()만 짧은 transaction으로 감싼다. persist가 private
+    // self-invocation이라 @Transactional을 못 붙이므로 TransactionTemplate을 직접 쓴다.
     public Optional<PlanRevision> createInitialPlan(UUID userId, Event event, UUID originPlaceId) {
         return compute(userId, event, originPlaceId, null)
-                .map(computed -> persist(computed, 1));
+                .map(computed -> persistInOwnTransaction(computed, 1));
     }
 
     // CAL-05: GET /routes/search에서 선택한 30분 TTL snapshot을 다시 provider에 질의하지 않고
     // 그대로 확정한다. 검색 시점과 event 저장 시점 사이에 provider 결과가 바뀌어 선택이 유실되는
     // 것을 막고, persistRouteOptions가 이 후보들을 plan 소속 ROUTE_OPTION으로 materialize한다.
-    @Transactional
     public Optional<PlanRevision> createInitialPlan(UUID userId, Event event, SelectedRouteSearch selectedSearch) {
         return computeFromSelectedSearch(userId, event, selectedSearch)
-                .map(computed -> persist(computed, 1));
+                .map(computed -> persistInOwnTransaction(computed, 1));
     }
 
     // §9.4 재계산 · §9.5 사용자 수정 · §10.2 경로 재선택의 공용 진입점.
     // routeTypeOverride가 있으면 새로 조회한 후보 중 같은 routeType을 우선 선택한다
     // ("선택은 재계산을 동반한다"). previousInputHash가 새로 계산한 값과 같으면
     // 저장 없이 changed=false를 반환한다(§5.5 — 외부 API 재호출은 이미 했지만 엔진 결과가
-    // 같으므로 리비전은 만들지 않는다. TRD가 말하는 "호출 0회"는 이상값이고, 실제로는
-    // Route/Environment Provider가 전부 스텁이라 지금은 비용 차이가 없다).
-    @Transactional
+    // 같으므로 리비전은 만들지 않는다).
     public RecomputeResult recompute(
             UUID userId, Event event, UUID originPlaceId, int nextRevisionNo,
             String previousInputHash, String routeTypeOverride) {
@@ -126,8 +126,17 @@ public class PlanCreationService {
         if (previousInputHash != null && previousInputHash.equals(computed.inputHash())) {
             return new RecomputeResult(Optional.empty(), false);
         }
-        PlanRevision saved = persist(computed, nextRevisionNo);
+        PlanRevision saved = persistInOwnTransaction(computed, nextRevisionNo);
         return new RecomputeResult(Optional.of(saved), true);
+    }
+
+    /**
+     * persist()를 짧은 transaction으로 감싼다. TransactionTemplate은 ambient transaction이
+     * 있으면(예: PlanService의 @Transactional 안에서 호출) 그것과 join하고, 없으면(예:
+     * CalendarSyncService처럼 transaction 없이 호출) 새로 시작한다 — 어느 호출부에서도 안전하다.
+     */
+    private PlanRevision persistInOwnTransaction(ComputedPlan computed, int revisionNo) {
+        return new TransactionTemplate(transactionManager).execute(status -> persist(computed, revisionNo));
     }
 
     public record RecomputeResult(Optional<PlanRevision> revision, boolean changed) {
@@ -140,7 +149,8 @@ public class PlanCreationService {
             com.hq.backend.provider.EnvironmentSnapshot environment,
             PlanEngineResponse output,
             String inputHash,
-            Instant computedAt) {
+            Instant computedAt,
+            Optional<WellnessEngineResponse> wellnessResponse) {
     }
 
     private Optional<ComputedPlan> compute(UUID userId, Event event, UUID originPlaceId, String routeTypeOverride) {
@@ -158,8 +168,9 @@ public class PlanCreationService {
         GeoPoint destPoint = new GeoPoint(event.getDestinationLat(), event.getDestinationLng());
         Instant now = Instant.now();
 
+        String anchorMode = event.getAnchorMode();
         List<com.hq.backend.provider.RouteOption> routes =
-                routeProvider.search(originPoint, destPoint, ANCHOR_ARRIVE_BY, now);
+                routeProvider.search(originPoint, destPoint, anchorMode, event.getStartsAt());
         if (routes.isEmpty()) {
             return Optional.empty();
         }
@@ -169,17 +180,20 @@ public class PlanCreationService {
                 .orElse(routes.get(0));
         com.hq.backend.provider.EnvironmentSnapshot environment = fetchEnvironmentSafely(destPoint, now);
 
-        PlanEngineRequest engineRequest = buildEngineRequest(userId, event, selectedRoute, environment, now, ANCHOR_ARRIVE_BY);
+        PlanEngineRequest engineRequest = buildEngineRequest(
+                userId, event, selectedRoute, environment, now, anchorMode);
         Optional<PlanEngineResponse> engineResponse = planEngineClient.compute(engineRequest);
         if (engineResponse.isEmpty()) {
             return Optional.empty();
         }
         PlanEngineResponse output = engineResponse.get();
         String inputHash = computeInputHash(event, originPlaceId, selectedRoute, environment, output);
+        Optional<WellnessEngineResponse> wellnessResponse =
+                fetchWellness(userId, selectedRoute, environment);
 
         return Optional.of(new ComputedPlan(
                 userId, event.getEventId(), originPlaceId, origin.getPlaceName(), originLat, originLng,
-                routes, selectedRoute, environment, output, inputHash, now));
+                routes, selectedRoute, environment, output, inputHash, now, wellnessResponse));
     }
 
     private Optional<ComputedPlan> computeFromSelectedSearch(
@@ -192,7 +206,7 @@ public class PlanCreationService {
         Instant now = Instant.now();
         com.hq.backend.provider.EnvironmentSnapshot environment = fetchEnvironmentSafely(destPoint, now);
         PlanEngineRequest engineRequest = buildEngineRequest(
-                userId, event, selectedSearch.selectedRoute(), environment, now, selectedSearch.anchorMode());
+                userId, event, selectedSearch.selectedRoute(), environment, now, event.getAnchorMode());
         Optional<PlanEngineResponse> engineResponse = planEngineClient.compute(engineRequest);
         if (engineResponse.isEmpty()) {
             return Optional.empty();
@@ -200,10 +214,12 @@ public class PlanCreationService {
         PlanEngineResponse output = engineResponse.get();
         String inputHash = computeInputHash(
                 event, selectedSearch.originPlaceId(), selectedSearch.selectedRoute(), environment, output);
+        Optional<WellnessEngineResponse> wellnessResponse =
+                fetchWellness(userId, selectedSearch.selectedRoute(), environment);
         return Optional.of(new ComputedPlan(
                 userId, event.getEventId(), selectedSearch.originPlaceId(), selectedSearch.originName(),
                 selectedSearch.originLat(), selectedSearch.originLng(), selectedSearch.routes(),
-                selectedSearch.selectedRoute(), environment, output, inputHash, now));
+                selectedSearch.selectedRoute(), environment, output, inputHash, now, wellnessResponse));
     }
 
     private PlanRevision persist(ComputedPlan computed, int revisionNo) {
@@ -238,7 +254,7 @@ public class PlanCreationService {
         persistEnvironmentContext(
                 revision, computed.environment(), computed.selectedRoute().outdoorSec() / 60);
         persistChecklist(revision, output.checklist());
-        computeAndPersistWellness(revision, computed);
+        persistWellness(revision, computed);
 
         productEventService.record(computed.userId(), "plan_created", Map.of(
                 "planId", revision.getPlanId().toString(),
@@ -250,38 +266,45 @@ public class PlanCreationService {
     }
 
     // TRD §7 — 환경 데이터가 없어도(environment=null) 엔진에 그대로 보내 degraded 처리를
-    // 맡긴다(TR-11.5와 같은 원칙, "웰니스만 조용히 생략"). 엔진 호출 자체가 실패하면(empty)
-    // 또는 wisScore가 없으면(degraded) 아무것도 저장하지 않는다 — 계획 생성은 이미 끝났다.
-    private void computeAndPersistWellness(PlanRevision revision, ComputedPlan computed) {
-        WellnessEngineRequest.EnvironmentSnapshot environmentSnapshot = computed.environment() == null ? null
+    // 맡긴다(TR-11.5와 같은 원칙, "웰니스만 조용히 생략"). compute() 단계(transaction 밖)에서
+    // 호출하고, 여기서는 이미 받아온 응답을 저장만 한다 — 웰니스 엔진 HTTP I/O가 persist()의
+    // DB transaction 안에서 일어나지 않도록.
+    private Optional<WellnessEngineResponse> fetchWellness(
+            UUID userId, com.hq.backend.provider.RouteOption selectedRoute,
+            com.hq.backend.provider.EnvironmentSnapshot environment) {
+        WellnessEngineRequest.EnvironmentSnapshot environmentSnapshot = environment == null ? null
                 : new WellnessEngineRequest.EnvironmentSnapshot(
-                        computed.environment().precipitationProb(), computed.environment().tempC(),
-                        computed.environment().uvIndex() < 0 ? null : computed.environment().uvIndex(),
-                        computed.environment().pm10() < 0 ? null : computed.environment().pm10(),
-                        computed.environment().airGrade(), computed.environment().feelsLikeMinCelsius(),
-                        computed.environment().feelsLikeMaxCelsius(), computed.environment().asOf());
+                        environment.precipitationProb(), environment.tempC(),
+                        environment.uvIndex() < 0 ? null : environment.uvIndex(),
+                        environment.pm10() < 0 ? null : environment.pm10(),
+                        environment.airGrade(), environment.feelsLikeMinCelsius(),
+                        environment.feelsLikeMaxCelsius(), environment.asOf());
 
         List<WellnessEngineRequest.WellnessPreference> preferences = userWellnessPrefRepository
-                .findByUserId(computed.userId()).stream()
+                .findByUserId(userId).stream()
                 .map(pref -> new WellnessEngineRequest.WellnessPreference(
                         pref.getWellnessTopic(), pref.isEnabled(), pref.getRemindIntervalMinutes(), pref.getDailyEventCap()))
                 .toList();
 
         List<WellnessEngineRequest.PrepItemSnapshot> prepItems = userPrepRuleRepository
-                .findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(computed.userId()).stream()
+                .findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(userId).stream()
                 .filter(rule -> !RuleTiming.POST_ARRIVAL.name().toLowerCase().equals(rule.getRuleTiming()))
                 .map(this::toWellnessPrepItemSnapshot)
                 .toList();
 
         WellnessEngineRequest request = new WellnessEngineRequest(
                 environmentSnapshot,
-                computed.selectedRoute().outdoorSec() / 60,
+                selectedRoute.outdoorSec() / 60,
                 preferences,
                 prepItems,
                 wellnessConfigService.current(),
                 WellnessEngineRequest.WellnessEventState.conservative());
 
-        Optional<WellnessEngineResponse> response = wellnessEngineClient.evaluate(request);
+        return wellnessEngineClient.evaluate(request);
+    }
+
+    private void persistWellness(PlanRevision revision, ComputedPlan computed) {
+        Optional<WellnessEngineResponse> response = computed.wellnessResponse();
         if (response.isEmpty() || response.get().wisScore() == null) {
             return;
         }
@@ -351,7 +374,12 @@ public class PlanCreationService {
                     .transferCount(route.transfers())
                     .departAt(route.departAt())
                     .arriveAt(route.etaAt())
-                    .routePayload(toJson(route.rawRef()))
+                    .routePayload(toJson(java.util.Map.of("provider", route.provider(), "rawRef", route.rawRef())))
+                    .provider(route.provider())
+                    .legs(toJson(route.legs()))
+                    .degraded(toJson("stub".equals(route.provider())
+                            ? List.of("route_provider_fallback") : List.of()))
+                    .rawRef(route.rawRef())
                     .build());
             if (route == selected) {
                 revision.setSelectedRouteOptionId(saved.getRouteOptionId());
@@ -432,7 +460,8 @@ public class PlanCreationService {
 
         return new PlanEngineRequest(
                 now,
-                new PlanEngineRequest.EventSnapshot(event.getStartsAt(), anchorMode, null),
+                new PlanEngineRequest.EventSnapshot(event.getStartsAt(), anchorMode,
+                        "depart_at".equals(anchorMode) ? event.getStartsAt() : null),
                 prepEstimate,
                 ARRIVAL_BUFFER_MINUTES,
                 TRAFFIC_BUFFER_MINUTES,

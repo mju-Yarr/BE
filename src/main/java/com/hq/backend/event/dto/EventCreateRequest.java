@@ -14,6 +14,7 @@ public record EventCreateRequest(
         Instant endsAt,
         @NotNull LocationState locationState,
         String destinationName,
+        String destinationAddress,
         Double destinationLat,
         Double destinationLng,
         String meetingUrl,

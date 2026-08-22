@@ -73,7 +73,7 @@ public class OdsayRouteProvider implements RouteProvider {
                     .toUri();
             String responseBody = restClient.get().uri(uri).retrieve().body(String.class);
             JsonNode response = objectMapper.readTree(responseBody);
-            return parseResponse(response, at);
+            return parseResponse(response, anchor, at);
         } catch (RestClientException | JsonProcessingException | IllegalStateException | ArithmeticException e) {
             // 일부 HTTP 예외 메시지에는 요청 URL이 포함될 수 있으므로 apiKey를 보호하기 위해 타입만 기록한다.
             log.warn("[ODsay] 경로 API 응답을 사용할 수 없어 Stub 경로로 대체합니다: {}", e.getClass().getSimpleName());
@@ -81,7 +81,7 @@ public class OdsayRouteProvider implements RouteProvider {
         }
     }
 
-    private List<RouteOption> parseResponse(JsonNode response, Instant at) {
+    private List<RouteOption> parseResponse(JsonNode response, String anchor, Instant at) {
         if (response == null || response.has("error")) {
             throw new IllegalStateException("ODsay 오류 응답");
         }
@@ -95,12 +95,12 @@ public class OdsayRouteProvider implements RouteProvider {
 
         List<RouteOption> options = new ArrayList<>();
         for (int index = 0; index < paths.size(); index++) {
-            options.add(toRouteOption(paths.get(index), index, at));
+            options.add(toRouteOption(paths.get(index), index, anchor, at));
         }
         return assignRanks(options);
     }
 
-    private RouteOption toRouteOption(JsonNode path, int index, Instant at) {
+    private RouteOption toRouteOption(JsonNode path, int index, String anchor, Instant at) {
         JsonNode info = path.path("info");
         JsonNode subPaths = path.path("subPath");
         if (info.isMissingNode() || !subPaths.isArray()) {
@@ -126,6 +126,8 @@ public class OdsayRouteProvider implements RouteProvider {
         if (rawRef.isBlank()) {
             rawRef = "odsay-path-" + index;
         }
+        Instant departAt = "arrive_by".equals(anchor) ? at.minusSeconds(totalSec) : at;
+        Instant arriveAt = "arrive_by".equals(anchor) ? at : at.plusSeconds(totalSec);
         return new RouteOption(
                 UUID.randomUUID().toString(),
                 "fastest",
@@ -134,8 +136,8 @@ public class OdsayRouteProvider implements RouteProvider {
                 transfers,
                 outdoorSec,
                 List.copyOf(legs),
-                at,
-                at.plusSeconds(totalSec),
+                departAt,
+                arriveAt,
                 "odsay",
                 rawRef);
     }

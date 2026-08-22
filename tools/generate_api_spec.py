@@ -128,6 +128,10 @@ def dto_fields(name: str) -> list[tuple[str, str, str]]:
     record = re.search(r'\brecord\s+' + re.escape(name) + r'\s*\(', text)
     if record:
         values, _ = balanced(text, record.end() - 1)
+        # 주석을 먼저 지운다. 나중에 지우면 주석 안의 쉼표에서 split_top이 잘려
+        # 주석 조각이 필드로 잡힌다.
+        values = re.sub(r'//[^\n]*', '', values)
+        values = re.sub(r'/\*.*?\*/', '', values, flags=re.S)
         result = []
         for field in split_top(values):
             clean = re.sub(r'@[\w.]+(?:\([^)]*\))?', '', field)

@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -66,8 +67,9 @@ public class AccountService {
     @Transactional
     public ChangeNicknameResponse changeNickname(UUID userId, String nickname) {
         validateNickname(nickname);
+        String normalized = nickname.trim();
 
-        if (userRepository.existsByNickname(nickname)) {
+        if (userRepository.existsByNicknameIgnoreCase(normalized)) {
             throw new ApiException(HttpStatus.CONFLICT, "NICKNAME_EXISTS",
                     "이미 사용 중인 닉네임입니다.");
         }
@@ -76,8 +78,13 @@ public class AccountService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND",
                         "사용자를 찾을 수 없습니다."));
 
-        user.setNickname(nickname);
-        return new ChangeNicknameResponse(nickname);
+        user.setNickname(normalized);
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException conflict) {
+            throw new ApiException(HttpStatus.CONFLICT, "NICKNAME_EXISTS", "이미 사용 중인 닉네임입니다.");
+        }
+        return new ChangeNicknameResponse(normalized);
     }
 
     /**
@@ -85,7 +92,7 @@ public class AccountService {
      */
     @Transactional(readOnly = true)
     public boolean isNicknameAvailable(String nickname) {
-        return !userRepository.existsByNickname(nickname);
+        return !userRepository.existsByNicknameIgnoreCase(nickname.trim());
     }
 
     /**

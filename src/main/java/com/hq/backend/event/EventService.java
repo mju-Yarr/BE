@@ -1,5 +1,7 @@
 package com.hq.backend.event;
 
+import com.hq.backend.bookmark.RecentDestinationService;
+import com.hq.backend.calendar.CalendarService;
 import com.hq.backend.common.exception.ApiException;
 import com.hq.backend.event.dto.EventCreateRequest;
 import com.hq.backend.event.dto.EventResponse;
@@ -11,7 +13,10 @@ import com.hq.backend.event.classification.AiReviewMetricEvent;
 import com.hq.backend.event.classification.AiReviewOutcome;
 import com.hq.backend.plan.PlanCreationService;
 import com.hq.backend.plan.PlanRevision;
+import com.hq.backend.plan.PlanRevisionRepository;
+import com.hq.backend.plan.RouteOptionRepository;
 import com.hq.backend.plan.dto.PlanResponse;
+import com.hq.backend.plan.dto.RouteOptionResponse;
 import com.hq.backend.route.RouteSearchService;
 import com.hq.backend.route.SelectedRouteSearch;
 import com.hq.backend.user.User;
@@ -19,8 +24,12 @@ import com.hq.backend.user.UserRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class EventService {
 
     private static final String QUESTION_TYPE_IS_ONLINE = "is_online";
+    // §3 S-11 "잘 모르겠어요". 답변으로 세되 장소 필요 여부는 건드리지 않는다.
+    private static final String ANSWER_UNKNOWN = "unknown";
     private static final List<String> EXCLUDED_FROM_NEXT =
             List.of(EventStatus.CANCELLED.name().toLowerCase(), EventStatus.SKIPPED.name().toLowerCase());
 
@@ -41,14 +52,17 @@ public class EventService {
     private final UserRepository userRepository;
     private final PlanCreationService planCreationService;
     private final RouteSearchService routeSearchService;
+    private final PlanRevisionRepository planRevisionRepository;
+    private final RouteOptionRepository routeOptionRepository;
+    private final CalendarService calendarService;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public List<EventResponse> list(UUID userId, Instant from, Instant to) {
+        validateListRange(from, to);
         String timezone = timezoneOf(userId);
-        return eventRepository.findByUserIdAndStartsAtBetweenOrderByStartsAtAsc(userId, from, to).stream()
-                .map(event -> EventResponse.from(event, timezone))
-                .toList();
+        List<Event> events = eventRepository.findByUserIdAndStartsAtBetweenOrderByStartsAtAsc(userId, from, to);
+        return toResponses(events, timezone);
     }
 
     @Transactional(readOnly = true)
@@ -58,12 +72,12 @@ public class EventService {
                 .findFirstByUserIdAndStartsAtAfterAndStatusNotInOrderByStartsAtAsc(
                         userId, Instant.now(), EXCLUDED_FROM_NEXT)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NEXT_EVENT_NOT_FOUND", "다음 일정이 없습니다."));
-        return EventResponse.from(event, timezone);
+        return toResponse(event, timezone);
     }
 
     @Transactional(readOnly = true)
     public EventResponse get(UUID userId, UUID eventId) {
-        return EventResponse.from(findOwned(userId, eventId), timezoneOf(userId));
+        return toResponse(findOwned(userId, eventId), timezoneOf(userId));
     }
 
     @Transactional(readOnly = true)
@@ -79,6 +93,9 @@ public class EventService {
     public EventResponse create(UUID userId, EventCreateRequest request) {
         validateDestinationPair(request.destinationLat(), request.destinationLng());
         validateTimeOrder(request.startsAt(), request.endsAt());
+        String anchorMode = normalizeAnchorMode(request.anchorMode());
+        UUID calendarSourceId = request.writeToCalendarSourceId() == null ? null
+                : calendarService.requireWritableSource(userId, request.writeToCalendarSourceId()).getCalendarSourceId();
 
         SelectedRouteSearch selectedSearch = request.selectedRouteOptionId() == null
                 ? null
@@ -87,12 +104,15 @@ public class EventService {
 
         Event saved = eventRepository.save(Event.builder()
                 .userId(userId)
+                .calendarSourceId(calendarSourceId)
                 .sourceType(request.sourceType().name().toLowerCase())
+                .anchorMode(anchorMode)
                 .startsAt(request.startsAt())
                 .endsAt(request.endsAt())
                 .isAllDay(false)
                 .locationState(request.locationState().name().toLowerCase())
                 .destinationName(request.destinationName())
+                .destinationAddress(request.destinationAddress())
                 .destinationLat(request.destinationLat())
                 .destinationLng(request.destinationLng())
                 .meetingUrl(request.meetingUrl())
@@ -123,7 +143,10 @@ public class EventService {
             }
         }
 
-        return EventResponse.from(saved, timezoneOf(userId), plan);
+        eventPublisher.publishEvent(new RecentDestinationService.RecordRequested(
+                userId, saved.getDestinationName(), saved.getDestinationAddress(),
+                saved.getDestinationLat(), saved.getDestinationLng()));
+        return toResponse(saved, timezoneOf(userId));
     }
 
     @Transactional
@@ -148,6 +171,9 @@ public class EventService {
             event.setDestinationName(request.destinationName());
             planInputChanged = true;
         }
+        if (request.destinationAddress() != null) {
+            event.setDestinationAddress(request.destinationAddress());
+        }
         if (request.destinationLat() != null) {
             event.setDestinationLat(request.destinationLat());
             planInputChanged = true;
@@ -170,6 +196,10 @@ public class EventService {
         if (request.autoManageExcluded() != null) {
             event.setAutoManageExcluded(request.autoManageExcluded());
         }
+        if (request.anchorMode() != null) {
+            event.setAnchorMode(normalizeAnchorMode(request.anchorMode()));
+            planInputChanged = true;
+        }
         if (planInputChanged) {
             event.setUpdatedAt(Instant.now());
         }
@@ -179,7 +209,10 @@ public class EventService {
             eventPublisher.publishEvent(new AiReviewMetricEvent(AiReviewOutcome.CLOSED_BY_USER_PATCH));
         }
 
-        return EventResponse.from(event, timezoneOf(userId));
+        eventPublisher.publishEvent(new RecentDestinationService.RecordRequested(
+                userId, event.getDestinationName(), event.getDestinationAddress(),
+                event.getDestinationLat(), event.getDestinationLng()));
+        return toResponse(event, timezoneOf(userId));
     }
 
     @Transactional
@@ -212,14 +245,20 @@ public class EventService {
         if (!isClassificationEligible(event)) {
             throw new ApiException(HttpStatus.CONFLICT, "REVIEW_STALE", "더 이상 답변할 수 없는 분류 확인 질문입니다.");
         }
+        // 명세 §3 S-11 — "잘 모르겠어요"는 질문을 닫되 장소 필요 여부를 확정하지
+        // 않는다. 닫지 않으면 재질문하게 되고(§13 "재질문 금지"), 상태를 바꾸면
+        // 사용자가 모른다고 한 것을 앱이 대신 정해버린다.
+        boolean declined = ANSWER_UNKNOWN.equals(request.userAnswer());
         LocationState resolved;
-        if ("offline".equals(request.userAnswer())) {
+        if (declined) {
+            resolved = LocationState.valueOf(event.getLocationState().toUpperCase(Locale.ROOT));
+        } else if ("offline".equals(request.userAnswer())) {
             resolved = LocationState.REQUIRED_MISSING;
         } else if ("online".equals(request.userAnswer())) {
             resolved = LocationState.NOT_REQUIRED;
         } else {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_ERROR",
-                    "questionType이 is_online일 때 userAnswer는 online 또는 offline이어야 합니다.");
+                    "questionType이 is_online일 때 userAnswer는 online, offline 또는 unknown이어야 합니다.");
         }
 
         Instant now = Instant.now();
@@ -230,12 +269,15 @@ public class EventService {
         review.setUserAnswer(request.userAnswer());
         review.setAnsweredAt(now);
 
-        event.setLocationState(resolved.name().toLowerCase());
-        if (resolved == LocationState.NOT_REQUIRED) {
-            event.setMeetingUrl(null);
+        if (!declined) {
+            event.setLocationState(resolved.name().toLowerCase());
+            if (resolved == LocationState.NOT_REQUIRED) {
+                event.setMeetingUrl(null);
+            }
         }
-        eventPublisher.publishEvent(new AiReviewMetricEvent(
-                resolved == LocationState.NOT_REQUIRED ? AiReviewOutcome.ANSWERED_ONLINE : AiReviewOutcome.ANSWERED_OFFLINE));
+        eventPublisher.publishEvent(new AiReviewMetricEvent(declined ? AiReviewOutcome.DECLINED_BY_USER
+                : resolved == LocationState.NOT_REQUIRED ? AiReviewOutcome.ANSWERED_ONLINE
+                        : AiReviewOutcome.ANSWERED_OFFLINE));
 
         return new EventReviewResponse(eventId, resolved, true);
     }
@@ -277,6 +319,53 @@ public class EventService {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_ERROR",
                     "선택한 경로 후보와 anchorMode가 일치하지 않습니다.");
         }
+    }
+
+    private List<EventResponse> toResponses(List<Event> events, String timezone) {
+        if (events.isEmpty()) return List.of();
+        List<UUID> eventIds = events.stream().map(Event::getEventId).toList();
+        Map<UUID, PlanRevision> revisions = planRevisionRepository.findByEventIdIn(eventIds).stream()
+                .filter(revision -> "active".equals(revision.getPlanStatus()))
+                .collect(Collectors.toMap(PlanRevision::getEventId, Function.identity(), (left, right) -> left));
+        Map<UUID, com.hq.backend.plan.RouteOption> routes = routeOptionRepository.findAllById(revisions.values().stream()
+                        .map(PlanRevision::getSelectedRouteOptionId).filter(java.util.Objects::nonNull).toList())
+                .stream().collect(Collectors.toMap(com.hq.backend.plan.RouteOption::getRouteOptionId,
+                        Function.identity()));
+        return events.stream().map(event -> toResponse(event, timezone, revisions, routes)).toList();
+    }
+
+    private EventResponse toResponse(Event event, String timezone) {
+        PlanRevision revision = planRevisionRepository
+                .findByEventIdAndPlanStatus(event.getEventId(), "active").orElse(null);
+        RouteOptionResponse route = revision == null || revision.getSelectedRouteOptionId() == null ? null
+                : routeOptionRepository.findById(revision.getSelectedRouteOptionId())
+                        .map(RouteOptionResponse::from).orElse(null);
+        return EventResponse.from(event, timezone, revision == null ? null : PlanResponse.from(revision), route);
+    }
+
+    private EventResponse toResponse(Event event, String timezone, Map<UUID, PlanRevision> revisions,
+            Map<UUID, com.hq.backend.plan.RouteOption> routes) {
+        PlanRevision revision = revisions.get(event.getEventId());
+        com.hq.backend.plan.RouteOption route = revision == null ? null
+                : routes.get(revision.getSelectedRouteOptionId());
+        return EventResponse.from(event, timezone, revision == null ? null : PlanResponse.from(revision),
+                route == null ? null : RouteOptionResponse.from(route));
+    }
+
+    private void validateListRange(Instant from, Instant to) {
+        if (from == null || to == null || !from.isBefore(to) || to.isAfter(from.plus(31, ChronoUnit.DAYS))) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_ERROR",
+                    "조회 기간은 최대 31일의 유효한 [from, to) 범위여야 합니다.");
+        }
+    }
+
+    private String normalizeAnchorMode(String value) {
+        String normalized = value == null || value.isBlank() ? "arrive_by" : value;
+        if (!"arrive_by".equals(normalized) && !"depart_at".equals(normalized)) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_ERROR",
+                    "anchorMode는 arrive_by 또는 depart_at이어야 합니다.");
+        }
+        return normalized;
     }
 
     private Event findOwned(UUID userId, UUID eventId) {

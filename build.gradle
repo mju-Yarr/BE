@@ -23,6 +23,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	// ponytail: 로컬 확인용 Swagger UI. 커밋하지 말 것(사용자 요청으로 로컬 전용 작업).
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5'
 	implementation 'org.springframework.boot:spring-boot-starter-mail:4.1.0'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator:4.1.0'
 	implementation 'com.fasterxml.jackson.core:jackson-databind'

@@ -1,6 +1,10 @@
 package com.hq.backend.auth;
 
 import com.hq.backend.auth.dto.CheckNicknameResponse;
+import com.hq.backend.auth.dto.EmailVerificationConfirmRequest;
+import com.hq.backend.auth.dto.EmailVerificationConfirmResponse;
+import com.hq.backend.auth.dto.EmailVerificationSendRequest;
+import com.hq.backend.auth.dto.EmailVerificationSendResponse;
 import com.hq.backend.auth.dto.GoogleLoginRequest;
 import com.hq.backend.auth.dto.LoginRequest;
 import com.hq.backend.auth.dto.PasswordResetExecuteRequest;
@@ -12,6 +16,7 @@ import com.hq.backend.auth.dto.TokenResponse;
 import com.hq.backend.auth.dto.VerifyEmailRequest;
 import com.hq.backend.common.auth.CurrentUserId;
 import com.hq.backend.user.AccountService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
 import java.util.UUID;
@@ -40,6 +45,19 @@ public class AuthController {
     @ResponseStatus(HttpStatus.CREATED)
     public SignupResponse signup(@Valid @RequestBody SignupRequest request) {
         return authService.signup(request);
+    }
+
+    @PostMapping("/email/verification/send")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public EmailVerificationSendResponse sendVerificationCode(
+            @Valid @RequestBody EmailVerificationSendRequest request, HttpServletRequest httpRequest) {
+        return authService.sendVerificationCode(request.email(), clientAddress(httpRequest));
+    }
+
+    @PostMapping("/email/verification/confirm")
+    public EmailVerificationConfirmResponse confirmVerificationCode(
+            @Valid @RequestBody EmailVerificationConfirmRequest request, HttpServletRequest httpRequest) {
+        return authService.confirmVerificationCode(request.email(), request.code(), clientAddress(httpRequest));
     }
 
     @PostMapping("/email/verify")
@@ -98,6 +116,11 @@ public class AuthController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void resetPassword(@Valid @RequestBody PasswordResetExecuteRequest request) {
         passwordResetService.executeReset(request.token(), request.newPassword());
+    }
+
+    private String clientAddress(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Real-IP");
+        return forwarded == null || forwarded.isBlank() ? request.getRemoteAddr() : forwarded.trim();
     }
 
     @GetMapping("/check-nickname")

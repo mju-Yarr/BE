@@ -12,6 +12,10 @@ public record DailySummaryResponse(
         int eventCount,
         int totalOutdoorMinutes,
         String outdoorSource,
+        // 홈 wrap 카드의 "정시 도착" 칸. arrivalSampleCount가 0이면 도착 결과를
+        // 하나도 모르는 것이므로, 클라이언트는 0회로 표시하지 말고 칸을 감춘다.
+        int onTimeCount,
+        int arrivalSampleCount,
         String dwlBand,
         Short dwlScore,
         String cardScenario,
@@ -26,6 +30,8 @@ public record DailySummaryResponse(
                 summary.getEventCount(),
                 summary.getTotalOutdoorMinutes(),
                 summary.getOutdoorSource(),
+                summary.getOnTimeCount(),
+                summary.getArrivalSampleCount(),
                 summary.getDwlBand(),
                 summary.getDwlScore(),
                 summary.getCardScenario(),

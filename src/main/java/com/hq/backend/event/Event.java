@@ -38,12 +38,20 @@ public class Event {
     @Column(nullable = false)
     private UUID userId;
 
+    @Setter
     private UUID calendarSourceId;
 
+    @Setter
     private String externalEventId;
 
+    @Setter
     @Column(nullable = false)
     private String sourceType; // internal | external | map_search
+
+    @Setter
+    @Builder.Default
+    @Column(nullable = false)
+    private String anchorMode = "arrive_by"; // arrive_by | depart_at
 
     @Setter
     @Column(nullable = false)
@@ -62,6 +70,9 @@ public class Event {
 
     @Setter
     private String destinationName;
+
+    @Setter
+    private String destinationAddress;
 
     @Setter
     private Double destinationLat;

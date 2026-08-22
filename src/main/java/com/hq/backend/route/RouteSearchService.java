@@ -1,5 +1,7 @@
 package com.hq.backend.route;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hq.backend.common.exception.ApiException;
 import com.hq.backend.place.PlaceCoordinateCodec;
 import com.hq.backend.place.UserPlace;
@@ -26,6 +28,7 @@ public class RouteSearchService {
     private final UserPlaceRepository userPlaceRepository;
     private final PlaceCoordinateCodec placeCoordinateCodec;
     private final RouteProvider routeProvider;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
     public List<RouteSearchResponse> search(UUID userId, RouteSearchRequest request) {
@@ -75,6 +78,9 @@ public class RouteSearchService {
                     .departAt(route.departAt())
                     .arriveAt(route.etaAt())
                     .provider(route.provider())
+                    .legs(toJson(route.legs()))
+                    .degraded(toJson("stub".equals(route.provider())
+                            ? List.of("route_provider_fallback") : List.of()))
                     .rawRef(route.rawRef())
                     .expiresAt(expiresAt)
                     .build()));
@@ -144,6 +150,14 @@ public class RouteSearchService {
     private void validateCoordinateBounds(String name, Double value, double min, double max) {
         if (value == null || !Double.isFinite(value) || value < min || value > max) {
             throw validationError(name + " 값이 올바르지 않습니다.");
+        }
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException exception) {
+            return "[]";
         }
     }
 

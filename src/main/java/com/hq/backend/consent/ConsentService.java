@@ -23,7 +23,7 @@ public class ConsentService {
                 .consentType(request.consentType().name().toLowerCase())
                 .policyVersion(request.policyVersion())
                 .action(request.agreed() ? "agreed" : "revoked")
-                .isRequired(false)
+                .isRequired(request.consentType() != ConsentType.MARKETING)
                 .idempotencyKey(idempotencyKey)
                 .recordedAt(Instant.now())
                 .build());

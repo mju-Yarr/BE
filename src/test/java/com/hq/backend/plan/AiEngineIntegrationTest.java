@@ -39,7 +39,11 @@ import org.springframework.test.web.servlet.MockMvc;
 
 // PR #105(계약 동결) 이후 실제로 Wellness/Personalization 엔진을 붙인 배선 검증.
 // 세 엔진 모두 같은 FastAPI 앱이라 fake HttpServer 하나에 컨텍스트 3개를 등록한다.
-@SpringBootTest
+@SpringBootTest(properties = {
+        "provider.kma.service-key=",
+        "provider.airkorea.service-key=",
+        "provider.airkorea.station-name="
+})
 @AutoConfigureMockMvc
 class AiEngineIntegrationTest {
 

@@ -374,6 +374,69 @@ class EventControllerTest {
         assertThat(reloadedOffline.getAnsweredAt()).isNotNull();
     }
 
+    /**
+     * 명세 §3 S-11 "잘 모르겠어요 — 미해결로 남긴다. 재질문하지 않는다".
+     *
+     * <p>답변을 닫아야 다시 묻지 않고, 장소 필요 여부는 확정하지 않아야 한다. 둘 중
+     * 하나만 지키면 규칙이 깨진다 — 닫지 않으면 재질문하고, 상태를 바꾸면 강제 확정이다.</p>
+     */
+    @Test
+    void 잘_모르겠어요는_질문만_닫고_장소_필요여부는_확정하지_않는다() throws Exception {
+        String token = signupAndLogin();
+        String eventId = createUndecidedEvent(token, "2026-08-21T10:00:00+09:00");
+        EventClassificationReview review = savePendingReview(UUID.fromString(eventId), Instant.now());
+
+        answer(token, eventId, review.getReviewId(), "unknown")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.locationState").value("undecided"))
+                .andExpect(jsonPath("$.reviewClosed").value(true));
+
+        EventClassificationReview reloaded = eventClassificationReviewRepository
+                .findById(review.getReviewId()).orElseThrow();
+        assertThat(reloaded.getUserAnswer()).isEqualTo("unknown");
+        assertThat(reloaded.getAnsweredAt()).isNotNull();
+        // 제목 원문은 답변과 함께 폐기한다(ck_title_purged).
+        assertThat(reloaded.getTitleSnapshot()).isNull();
+        assertThat(eventRepository.findById(UUID.fromString(eventId)).orElseThrow().getLocationState())
+                .isEqualTo("undecided");
+    }
+
+    @Test
+    void 잘_모르겠어요로_닫은_질문은_다시_답할_수_없다() throws Exception {
+        String token = signupAndLogin();
+        String eventId = createUndecidedEvent(token, "2026-08-21T10:00:00+09:00");
+        EventClassificationReview review = savePendingReview(UUID.fromString(eventId), Instant.now());
+
+        answer(token, eventId, review.getReviewId(), "unknown").andExpect(status().isOk());
+
+        assertReviewError(token, eventId, review.getReviewId(), "REVIEW_ALREADY_CLOSED", 409);
+    }
+
+    @Test
+    void 미해결로_닫은_일정은_pending_목록에서_빠진다() throws Exception {
+        String token = signupAndLogin();
+        String eventId = createUndecidedEvent(token, "2026-08-21T10:00:00+09:00");
+        EventClassificationReview review = savePendingReview(UUID.fromString(eventId), Instant.now());
+
+        mockMvc.perform(get("/events/reviews/pending")
+                        .header("Authorization", "Bearer " + token)
+                        .param("from", "2026-08-21T00:00:00+09:00")
+                        .param("to", "2026-08-22T00:00:00+09:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].reviewId").value(review.getReviewId().toString()))
+                .andExpect(jsonPath("$[0].questionType").value("is_online"));
+
+        answer(token, eventId, review.getReviewId(), "unknown").andExpect(status().isOk());
+
+        mockMvc.perform(get("/events/reviews/pending")
+                        .header("Authorization", "Bearer " + token)
+                        .param("from", "2026-08-21T00:00:00+09:00")
+                        .param("to", "2026-08-22T00:00:00+09:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
     @Test
     void 사용자_PATCH가_분류_eligibility를_제거하면_pending_review를_사용자_답변없이_닫는다() throws Exception {
         String token = signupAndLogin();
@@ -420,6 +483,18 @@ class EventControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].eventId").value(insideId));
+    }
+
+    @Test
+    void 기간_조회는_31일을_초과하면_422이다() throws Exception {
+        String accessToken = signupAndLogin();
+
+        mockMvc.perform(get("/events")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .param("from", "2026-08-01T00:00:00+09:00")
+                        .param("to", "2026-09-02T00:00:00+09:00"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
     }
 
     private String createEvent(String accessToken, String startsAt) throws Exception {

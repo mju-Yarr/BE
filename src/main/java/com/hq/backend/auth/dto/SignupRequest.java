@@ -3,11 +3,24 @@ package com.hq.backend.auth.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.util.Map;
+import java.util.UUID;
 
-// birthDate(만 14세 확인)는 Vium 전용 요구사항이라 뺐다 — Ensom users 테이블엔
-// age_confirmed_at 컬럼 자체가 없다(V5, "Ensom 범위에 없음").
+/**
+ * The extended fields implement the verified atomic signup flow. The two-argument constructor
+ * keeps the legacy email-link signup contract source compatible.
+ */
 public record SignupRequest(
+        String name,
+        String nickname,
         @NotBlank @Email String email,
-        @NotBlank @Size(min = 10, message = "비밀번호는 10자 이상이어야 합니다.") String password
+        @NotBlank @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.") String password,
+        String timezone,
+        UUID installationId,
+        String verificationTicket,
+        Map<String, Boolean> consents
 ) {
+    public SignupRequest(String email, String password) {
+        this(null, null, email, password, null, null, null, null);
+    }
 }
