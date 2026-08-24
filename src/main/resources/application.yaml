@@ -83,7 +83,7 @@ provider:
     uv:
       # 생활기상지수 API의 행정구역 코드. 좌표에서 임의로 추론하지 않고 배포 환경에서 명시한다.
       area-no: ${KMA_UV_AREA_NO:}
-      index-url: https://apis.data.go.kr/1360000/LivingWthrIdxServiceV4/getUVIdxV4
+      index-url: https://apis.data.go.kr/1360000/LivingWthrIdxServiceV5/getUVIdxV5
   airkorea:
     # AirKorea는 PM raw 값과 provider grade를 함께 준다. grade는 raw 값에서 BE가 계산하지 않는다.
     service-key: ${AIRKOREA_SERVICE_KEY:}
