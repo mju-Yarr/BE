@@ -2,14 +2,14 @@
 
 ## 전제 조건
 
-- 가비아 서버 (1.201.116.84)에 SSH 접근 가능
+- 가비아 서버 (<서버 IP>)에 SSH 접근 가능
 - 도메인이 해당 IP로 DNS A 레코드 설정됨
 - Docker Compose가 설치됨
 
 ## 현재 상태 (TLS 미적용)
 
 ```
-http://1.201.116.84  →  nginx(80)  →  api(8080)
+http://<서버 IP>  →  nginx(80)  →  api(8080)
 ```
 
 JWT, 비밀번호 등 인증 데이터가 평문 전송됨.
@@ -27,7 +27,7 @@ http://api.ensom.app   →  301 redirect   →  https://
 
 가비아 DNS에서 A 레코드 추가:
 ```
-api.ensom.app  →  1.201.116.84
+api.ensom.app  →  <서버 IP>
 ```
 
 ### 2. 서버에서 스크립트 실행
@@ -35,7 +35,7 @@ api.ensom.app  →  1.201.116.84
 운영 Compose에는 80/443 포트와 인증서·ACME webroot 볼륨이 선언되어 있다. 스크립트는 nginx를 중지하지 않고 webroot 방식으로 최초 인증서를 발급하고, 생성한 TLS 설정에 `nginx -t`를 통과시킨 뒤 reload한다. 발급 또는 설정 검증이 실패하면 기존 HTTP nginx는 계속 동작하며, 설정을 바꾼 뒤 실패한 경우에는 자동으로 원복한다.
 
 ```bash
-ssh root@1.201.116.84
+ssh <사용자>@<서버 IP>
 cd /path/to/project
 chmod +x deploy/setup-tls.sh
 CERTBOT_EMAIL=admin@ensom.app ./deploy/setup-tls.sh api.ensom.app
