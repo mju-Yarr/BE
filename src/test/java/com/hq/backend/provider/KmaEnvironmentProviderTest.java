@@ -48,6 +48,24 @@ class KmaEnvironmentProviderTest {
         server.verify();
     }
 
+    @Test
+    void serviceKeyReservedCharactersArePercentEncoded() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(method(HttpMethod.GET))
+                .andExpect(request -> assertThat(request.getURI().getRawQuery())
+                        .contains("serviceKey=a%2Bb%2Fc%3D%3D"))
+                .andRespond(withSuccess(FIXTURE, MediaType.APPLICATION_JSON));
+
+        KmaEnvironmentProvider provider = new KmaEnvironmentProvider(builder.build());
+        setPrivateField(provider, "serviceKey", "a+b/c==");
+        setPrivateField(provider, "forecastUrl", "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst");
+
+        provider.fetch(new GeoPoint(37.5665, 126.9780), Instant.now());
+
+        server.verify();
+    }
+
     private void setPrivateField(Object target, String name, Object value) throws Exception {
         Field field = target.getClass().getDeclaredField(name);
         field.setAccessible(true);

@@ -2,6 +2,8 @@ package com.hq.backend.provider;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -70,8 +72,12 @@ public class KmaEnvironmentProvider implements EnvironmentProvider {
         int[] grid = toGrid(point.lat(), point.lng());
         String[] baseDateTime = baseDateTime(at);
 
+        // serviceKey(디코딩 키)에는 '+'와 '='가 들어있는데, UriComponentsBuilder.encode()는
+        // 이 둘을 query 컴포넌트에서 합법인 문자로 보고 그대로 통과시킨다. data.go.kr은
+        // 원문 '+'를 공백으로 해석해 키가 어긋나 403 SERVICE_KEY_IS_NOT_REGISTERED_ERROR를
+        // 돌려준다. 값만 직접 percent-encoding하고 build(true)로 재인코딩을 막는다.
         URI uri = UriComponentsBuilder.fromUriString(forecastUrl)
-                .queryParam("serviceKey", serviceKey)
+                .queryParam("serviceKey", URLEncoder.encode(serviceKey, StandardCharsets.UTF_8))
                 .queryParam("dataType", "JSON")
                 .queryParam("numOfRows", 100)
                 .queryParam("pageNo", 1)
@@ -79,8 +85,7 @@ public class KmaEnvironmentProvider implements EnvironmentProvider {
                 .queryParam("base_time", baseDateTime[1])
                 .queryParam("nx", grid[0])
                 .queryParam("ny", grid[1])
-                .encode()
-                .build()
+                .build(true)
                 .toUri();
 
         KmaResponse response = restClient.get().uri(uri).retrieve().body(KmaResponse.class);

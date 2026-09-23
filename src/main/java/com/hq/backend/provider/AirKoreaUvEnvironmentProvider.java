@@ -2,6 +2,8 @@ package com.hq.backend.provider;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -88,15 +90,17 @@ public class AirKoreaUvEnvironmentProvider implements EnvironmentProvider {
 
     private Optional<AirReading> fetchAir() {
         try {
+            // encode()는 '+'·'='를 query에서 합법인 문자로 보고 통과시켜, 그런 문자가 든
+            // 서비스키를 쓰면 data.go.kr이 키를 오인한다(KmaEnvironmentProvider 주석 참고).
+            // 값을 직접 percent-encoding하고 build(true)로 재인코딩을 막는다.
             URI uri = UriComponentsBuilder.fromUriString(measurementUrl)
-                    .queryParam("serviceKey", airKoreaServiceKey)
+                    .queryParam("serviceKey", URLEncoder.encode(airKoreaServiceKey, StandardCharsets.UTF_8))
                     .queryParam("returnType", "json")
                     .queryParam("numOfRows", 1)
                     .queryParam("pageNo", 1)
-                    .queryParam("stationName", stationName)
+                    .queryParam("stationName", URLEncoder.encode(stationName, StandardCharsets.UTF_8))
                     .queryParam("dataTerm", "DAILY")
-                    .encode()
-                    .build()
+                    .build(true)
                     .toUri();
             AirKoreaResponse response = restClient.get().uri(uri).retrieve().body(AirKoreaResponse.class);
             AirKoreaItem item = response == null || response.response() == null || response.response().body() == null
@@ -130,12 +134,11 @@ public class AirKoreaUvEnvironmentProvider implements EnvironmentProvider {
         try {
             String time = at.atZone(KST).format(DateTimeFormatter.ofPattern("yyyyMMddHH"));
             URI uri = UriComponentsBuilder.fromUriString(uvIndexUrl)
-                    .queryParam("serviceKey", kmaServiceKey)
+                    .queryParam("serviceKey", URLEncoder.encode(kmaServiceKey, StandardCharsets.UTF_8))
                     .queryParam("dataType", "JSON")
                     .queryParam("areaNo", uvAreaNo)
                     .queryParam("time", time)
-                    .encode()
-                    .build()
+                    .build(true)
                     .toUri();
             KmaUvResponse response = restClient.get().uri(uri).retrieve().body(KmaUvResponse.class);
             KmaUvItem item = response == null || response.response() == null || response.response().body() == null
