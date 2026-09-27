@@ -1,6 +1,6 @@
 #!/bin/bash
 # TLS 인증서 발급 및 nginx 설정 스크립트 (가비아 서버용)
-# 사용법: ssh root@1.201.116.84 후 실행
+# 사용법: ssh <사용자>@<서버 IP> 후 실행
 #   chmod +x deploy/setup-tls.sh
 #   ./deploy/setup-tls.sh your-domain.com
 
