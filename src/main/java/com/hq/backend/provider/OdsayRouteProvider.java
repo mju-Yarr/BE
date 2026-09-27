@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -59,8 +61,12 @@ public class OdsayRouteProvider implements RouteProvider {
         }
 
         try {
+            // apiKey에 '/'·'+'가 들어있는데 encode()는 이 둘을 query에서 합법인 문자로 보고
+            // 그대로 통과시킨다. ODsay는 원문 '+'를 공백으로 해석해 ApiKeyAuthFailed를
+            // 돌려준다(KmaEnvironmentProvider와 같은 함정). 값을 직접 percent-encoding하고
+            // build(true)로 재인코딩을 막는다.
             URI uri = UriComponentsBuilder.fromUriString(routeUrl)
-                    .queryParam("apiKey", apiKey)
+                    .queryParam("apiKey", URLEncoder.encode(apiKey, StandardCharsets.UTF_8))
                     .queryParam("SX", origin.lng())
                     .queryParam("SY", origin.lat())
                     .queryParam("EX", dest.lng())
@@ -68,8 +74,7 @@ public class OdsayRouteProvider implements RouteProvider {
                     .queryParam("OPT", 0)
                     .queryParam("SearchType", 0)
                     .queryParam("SearchPathType", 0)
-                    .encode()
-                    .build()
+                    .build(true)
                     .toUri();
             String responseBody = restClient.get().uri(uri).retrieve().body(String.class);
             JsonNode response = objectMapper.readTree(responseBody);

@@ -192,6 +192,27 @@ class OdsayRouteProviderTest {
         server.verify();
     }
 
+    @Test
+    void apiKey_reserved_characters_are_percent_encoded() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(method(HttpMethod.GET))
+                .andExpect(request -> assertThat(request.getURI().getRawQuery())
+                        .contains("apiKey=a%2Bb%2Fc%3D%3D"))
+                .andRespond(withSuccess(SUCCESS_FIXTURE, MediaType.APPLICATION_JSON));
+
+        OdsayRouteProvider provider = new OdsayRouteProvider(
+                builder.build(),
+                new StubRouteProvider(),
+                "a+b/c==",
+                "https://api.odsay.com/v1/api/searchPubTransPathT");
+
+        provider.search(new GeoPoint(37.5665, 126.9780), new GeoPoint(37.4979, 127.0276),
+                "arriveBy", Instant.parse("2026-08-17T00:00:00Z"));
+
+        server.verify();
+    }
+
     private OdsayRouteProvider provider(RestClient restClient) {
         return new OdsayRouteProvider(
                 restClient,
